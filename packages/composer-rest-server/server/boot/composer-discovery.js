@@ -15,54 +15,10 @@
 'use strict';
 
 const connector = require('loopback-connector-composer');
-const LoopBackWallet = require('../../lib/loopbackwallet');
-const QueryAnalyzer = require('composer-common').QueryAnalyzer;
-const ModelUtil = require('composer-common').ModelUtil;
+const IdCard = require('composer-common').IdCard;
 const LoopbackVisitor = require('composer-common').LoopbackVisitor;
-
-/**
- * Find or create the system wallet for storing identities in.
- * @param {Object} app The LoopBack application.
- * @returns {Promise} A promise that will be resolved with the system wallet,
- * or be rejected with an error.
- */
-function findOrCreateSystemWallet(app) {
-    let filter = {
-        where: {
-            createdAsSystem: true
-        }
-    };
-    let data = {
-        description: 'System wallet',
-        createdAsSystem: true
-    };
-    return app.models.Wallet.findOrCreate(filter, data)
-        .then((parts) => {
-            return parts[0];
-        });
-}
-
-/**
- * Find or create the identity in the specified Composer configuration.
- * @param {Object} app The LoopBack application.
- * @param {Object} composer The Composer configuration.
- * @param {Object} wallet The wallet.
- * @returns {Promise} A promise that will be resolved when complete, or rejected
- * with an error.
- */
-function findOrCreateIdentity(app, composer, wallet) {
-    let filter = {
-        where: {
-            enrollmentID: composer.participantId
-        }
-    };
-    let data = {
-        walletId: wallet.id,
-        enrollmentID: composer.participantId,
-        enrollmentSecret: composer.participantPwd
-    };
-    return app.models.WalletIdentity.findOrCreate(filter, data);
-}
+const ModelUtil = require('composer-common').ModelUtil;
+const QueryAnalyzer = require('composer-common').QueryAnalyzer;
 
 /**
  * Create a Composer data source using the specified Composer configuration.
@@ -75,11 +31,9 @@ function createDataSource(app, composer) {
     const connectorSettings = {
         name: 'composer',
         connector: connector,
-        connectionProfileName: composer.connectionProfileName,
-        businessNetworkIdentifier: composer.businessNetworkIdentifier,
-        participantId: composer.participantId,
-        participantPwd: composer.participantPwd,
+        card: composer.card,
         namespaces: composer.namespaces,
+        multiuser: composer.multiuser,
         fs: composer.fs,
         wallet: composer.wallet
     };
@@ -159,8 +113,8 @@ function registerSystemMethods(app, dataSource) {
         registerIssueIdentityMethod,
         registerBindIdentityMethod,
         registerRevokeIdentityMethod,
-        registerGetAllTransactionsMethod,
-        registerGetTransactionByIDMethod
+        registerGetAllHistorianRecordsMethod,
+        registerGetHistorianRecordsByIDMethod
     ];
     registerMethods.forEach((registerMethod) => {
         registerMethod(app, dataSource, System, connector);
@@ -423,30 +377,28 @@ function registerIssueIdentityMethod(app, dataSource, System, connector) {
         dataSource: dataSource,
         public: false
     });
-    const IssueIdentityResponse = app.loopback.createModel({
-        name: 'IssueIdentityResponse',
-        description: 'The response to the issueIdentity method',
-        base: 'Model',
-        properties: {
-            userID: {
-                type: 'string',
-                required: true
-            },
-            userSecret: {
-                type: 'string',
-                required: true
-            }
-        },
-        hidden: [ 'id' ]
-    });
-    app.model(IssueIdentityResponse, {
-        dataSource: dataSource,
-        public: false
-    });
 
     // Define and register the method.
-    System.issueIdentity = (data, options, callback) => {
-        connector.issueIdentity(data.participant, data.userID, data.options, options, callback);
+    System.issueIdentity = (data, res, options) => {
+        let cardData;
+        return new Promise((resolve, reject) => {
+            connector.issueIdentity(data.participant, data.userID, data.options, options, (err, result) => {
+                if (err) {
+                    return reject(err);
+                }
+                resolve(result);
+            });
+        }).then((cardData_) => {
+            cardData = cardData_;
+            return IdCard.fromArchive(cardData);
+        })
+        .then((card) => {
+            const name = card.getUserName() + '@' + card.getBusinessNetworkName();
+            res.setHeader('Content-Disposition', `attachment; filename=${name}.card`);
+            res.setHeader('Content-Length', cardData.length);
+            res.setHeader('Content-Type', 'application/octet-stream');
+            return cardData;
+        });
     };
     System.remoteMethod(
         'issueIdentity', {
@@ -459,12 +411,19 @@ function registerIssueIdentityMethod(app, dataSource, System, connector) {
                     source: 'body'
                 }
             }, {
+                arg: 'res',
+                type: 'object',
+                http: {
+                    source: 'res'
+                }
+            }, {
                 arg: 'options',
                 type: 'object',
                 http: 'optionsFromRequest'
             }],
             returns: {
-                type: 'IssueIdentityResponse',
+                arg: 'cardFile',
+                type: 'file',
                 root: true
             },
             http: {
@@ -581,15 +540,15 @@ function registerRevokeIdentityMethod(app, dataSource, System, connector) {
  * @param {Object} System The System model class.
  * @param {Object} connector The LoopBack connector.
  */
-function registerGetAllTransactionsMethod(app, dataSource, System, connector) {
+function registerGetAllHistorianRecordsMethod(app, dataSource, System, connector) {
 
     // Define and register the method.
-    System.getAllTransactions = (options, callback) => {
-        connector.getAllTransactions(options, callback);
+    System.getAllHistorianRecords = (options, callback) => {
+        connector.getAllHistorianRecords(options, callback);
     };
     System.remoteMethod(
-        'getAllTransactions', {
-            description: 'Get all transactions from the transaction registry',
+        'getAllHistorianRecords', {
+            description: 'Get all Historian Records from the Historian',
             accepts: [{
                 arg: 'options',
                 type: 'object',
@@ -601,7 +560,7 @@ function registerGetAllTransactionsMethod(app, dataSource, System, connector) {
             },
             http: {
                 verb: 'get',
-                path: '/transactions'
+                path: '/historian'
             }
         }
     );
@@ -609,21 +568,21 @@ function registerGetAllTransactionsMethod(app, dataSource, System, connector) {
 }
 
 /**
- * Register the 'getTransactionByID' Composer system method.
+ * Register the 'getHistorianRecordByID' Composer system method.
  * @param {Object} app The LoopBack application.
  * @param {Object} dataSource The LoopBack data source.
  * @param {Object} System The System model class.
  * @param {Object} connector The LoopBack connector.
  */
-function registerGetTransactionByIDMethod(app, dataSource, System, connector) {
+function registerGetHistorianRecordsByIDMethod(app, dataSource, System, connector) {
 
     // Define and register the method.
-    System.getTransactionByID = (id, options, callback) => {
-        connector.getTransactionByID(id, options, callback);
+    System.getHistorianRecordByID = (id, options, callback) => {
+        connector.getHistorianRecordByID(id, options, callback);
     };
     System.remoteMethod(
-        'getTransactionByID', {
-            description: 'Get the specified transaction from the transaction registry',
+        'getHistorianRecordByID', {
+            description: 'Get the specified Historian Record from the Historian',
             accepts: [{
                 arg: 'id',
                 type: 'string',
@@ -642,7 +601,7 @@ function registerGetTransactionByIDMethod(app, dataSource, System, connector) {
             },
             http: {
                 verb: 'get',
-                path: '/transactions/:id'
+                path: '/historian/:id'
             }
         }
     );
@@ -733,7 +692,7 @@ function restrictModelMethods(modelSchema, model) {
     if (modelSchema.options.composer.type === 'concept') {
         whitelist = [ ];
     } else if (modelSchema.options.composer.type === 'transaction') {
-        whitelist = [ 'create' ];
+        whitelist = [ 'create' ,'find', 'findById'];
     } else {
         whitelist = [ 'create', 'deleteById', 'find', 'findById', 'exists', 'replaceById' ];
     }
@@ -765,28 +724,6 @@ module.exports = function (app, callback) {
     }
     let dataSource;
     return Promise.resolve()
-    .then(() => {
-
-        // If this isn't the memory connector, then we want to persist the enrollment certificates.
-        // This means that the Composer APIs will fall back to using the default filesystem wallet.
-        const isMemory = app.datasources.db.name === 'Memory';
-        if (isMemory) {
-            return;
-        }
-
-        // Find or create the system wallet.
-        return findOrCreateSystemWallet(app)
-            .then((wallet) => {
-
-                // Create a LoopBack wallet for the system wallet.
-                composer.wallet = new LoopBackWallet(app, wallet);
-
-                // Ensure that the specified identity exists.
-                return findOrCreateIdentity(app, composer, wallet);
-
-            });
-
-    })
     .then(() => {
 
         // Create an instance of the LoopBack data source that uses the connector.

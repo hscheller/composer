@@ -15,28 +15,15 @@
 'use strict';
 
 const Admin = require('composer-admin');
+const Create = require('../../card/lib/create');
 const BusinessNetworkDefinition = Admin.BusinessNetworkDefinition;
+const chalk = require('chalk');
 const cmdUtil = require('../../utils/cmdutils');
 const fs = require('fs');
-const homedir = require('homedir');
-
-
-const PROFILE_ROOT = homedir() + '/.composer-connection-profiles/';
-const CONNECTION_FILE = 'connection.json';
-
-const CREDENTIALS_ROOT = homedir() + '/.composer-credentials';
-const DEFAULT_PROFILE_NAME = 'defaultProfile';
-
 const ora = require('ora');
-const chalk = require('chalk');
-const LogLevel = require('./loglevel');
-
 
 /**
- * <p>
  * Composer deploy command
- * </p>
- * <p><a href="diagrams/Deploy.svg"><img src="diagrams/deploy.svg" style="width:100%;"/></a></p>
  * @private
  */
 class Deploy {
@@ -53,55 +40,24 @@ class Deploy {
                                   ? true
                                   : false;
         let businessNetworkDefinition;
-
-        let connectOptions;
         let adminConnection;
-        let enrollId;
-        let enrollSecret;
-        let connectionProfileName = Deploy.getDefaultProfileName(argv);
         let businessNetworkName;
         let spinner;
-        let loglevel;
+        let logLevel = argv.loglevel;
+        let cardName = argv.card;
+        let card;
+        let filename;
 
-        if (argv.loglevel) {
-            // validate log level as yargs cannot at this time
-            // https://github.com/yargs/yargs/issues/849
-            loglevel = argv.loglevel.toUpperCase();
-            if (!LogLevel.validLogLevel(loglevel)) {
-                return Promise.reject(new Error('loglevel unspecified or not one of (INFO|WARNING|ERROR|DEBUG)'));
-            }
-        }
 
-        return (() => {
-            console.log(chalk.blue.bold('Deploying business network from archive: ')+argv.archiveFile);
+        console.log(chalk.blue.bold('Deploying business network from archive: ')+argv.archiveFile);
+        let archiveFileContents = null;
+        adminConnection = cmdUtil.createAdminConnection();
+        // Read archive file contents
+        return adminConnection.getCard(cardName)
+        .then(()=>{
 
-            if (!argv.enrollSecret) {
-                return cmdUtil.prompt({
-                    name: 'enrollmentSecret',
-                    description: 'What is the enrollment secret of the user?',
-                    required: true,
-                    hidden: true,
-                    replace: '*'
-                })
-                .then((result) => {
-                    argv.enrollSecret = result;
-                });
-            } else {
-                return Promise.resolve();
-            }
-        })()
-        .then (() => {
-            enrollId = argv.enrollId;
-            enrollSecret = argv.enrollSecret;
-            let archiveFileContents = null;
-            // Read archive file contents
+            // getArchiveFileContents, is a sync function, so use Promise.resolve() to ensure it gives a rejected promise
             archiveFileContents = Deploy.getArchiveFileContents(argv.archiveFile);
-            // Get the connection options
-            try {
-                connectOptions = Deploy.getConnectOptions(connectionProfileName);
-            } catch (error) {
-                throw new Error('Failed to read connection profile \'' + connectionProfileName + '\'. Error was ' + error);
-            }
             return BusinessNetworkDefinition.fromArchive(archiveFileContents);
         })
         .then ((result) => {
@@ -111,67 +67,87 @@ class Deploy {
             console.log(chalk.blue('\tIdentifier: ')+businessNetworkName);
             console.log(chalk.blue('\tDescription: ')+businessNetworkDefinition.getDescription());
             console.log();
-            adminConnection = cmdUtil.createAdminConnection();
-            return adminConnection.createProfile(connectionProfileName, connectOptions);
-        })
-        .then ((result) => {
+
             // if we are performing an update we have to actually connect to the network
             // we want to update!
-            return adminConnection.connect(connectionProfileName, enrollId, enrollSecret, updateBusinessNetwork ? businessNetworkDefinition.getName() : null);
+
+            return adminConnection.connect(cardName);
+
         })
-        .then((result) => {
+        .then(() => {
+            // need to get the card now for later use
+            return adminConnection.getCard(cardName);
+        })
+        .then((_card)=>{
+            card = _card;
             if (updateBusinessNetwork === false) {
                 spinner = ora('Deploying business network definition. This may take a minute...').start();
+                // Build the deploy options.
                 let deployOptions = cmdUtil.parseOptions(argv);
-                if (loglevel) {
-                    deployOptions.logLevel = loglevel;
+                if (logLevel) {
+                    deployOptions.logLevel = logLevel;
                 }
+                deployOptions.card = card;
+                // Build the bootstrap tranactions.
+                let bootstrapTransactions = cmdUtil.buildBootstrapTransactions(businessNetworkDefinition, argv);
+
+                // Merge the deploy options and bootstrap transactions.
+                if (deployOptions.bootstrapTransactions) {
+                    deployOptions.bootstrapTransactions = bootstrapTransactions.concat(deployOptions.bootstrapTransactions);
+                } else {
+                    deployOptions.bootstrapTransactions = bootstrapTransactions;
+                }
+
+                // Deploy the business network.
                 return adminConnection.deploy(businessNetworkDefinition, deployOptions);
+
             } else {
                 spinner = ora('Updating business network definition. This may take a few seconds...').start();
                 return adminConnection.update(businessNetworkDefinition);
             }
         }).then((result) => {
-            spinner.succeed();
-            console.log();
 
+            if (!updateBusinessNetwork){
+                // need to create a card for the admin and then write it to disk for the user
+                // to import
+                // set if the options have been given into the metadata
+                let metadata= {
+                    version : 1,
+                    userName : argv.networkAdmin,
+                    businessNetwork : businessNetworkDefinition.getName()
+                };
+                // copy across any other parameters that might be used
+                let createArgs = {};
+                if (argv.file){
+                    createArgs.file = argv.file;
+                }
+
+                if (argv.networkAdminEnrollSecret){
+                    metadata.enrollmentSecret = argv.networkAdminEnrollSecret;
+                } else {
+                    // the networkAdminCertificateFile will be set unless yargs has got it's job wrong!
+                    createArgs.certificate = argv.networkAdminCertificateFile;
+                }
+
+                return Create.createCard(metadata,card.getConnectionProfile(),createArgs).then((_filename)=>{
+                    filename = _filename;
+                    return;
+                });
+            }
             return result;
-        }).catch((error) => {
-
+        }).then((result)=>{
+            spinner.succeed();
+            console.log('Successfully created business network card to '+filename);
+            return result;
+        })
+        .catch((error) => {
             if (spinner) {
                 spinner.fail();
             }
-
             console.log();
 
             throw error;
         });
-    }
-
-    /**
-      * Get connection options from profile
-      * @param {string} connectionProfileName connection profile name
-      * @return {connectOptions} connectOptions options
-      */
-    static getConnectOptions(connectionProfileName) {
-
-        let connectOptions;
-        let connectionProfile = PROFILE_ROOT + connectionProfileName + '/' + CONNECTION_FILE;
-        if (fs.existsSync(connectionProfile)) {
-            let connectionProfileContents = fs.readFileSync(connectionProfile);
-            connectOptions = JSON.parse(connectionProfileContents);
-        } else {
-            let defaultKeyValStore = CREDENTIALS_ROOT;
-
-            connectOptions = {type: 'hlf'
-                             ,membershipServicesURL: 'grpc://localhost:7054'
-                             ,peerURL: 'grpc://localhost:7051'
-                             ,eventHubURL: 'grpc://localhost:7053'
-                             ,keyValStore: defaultKeyValStore
-                             ,deployWaitTime: '300'
-                             ,invokeWaitTime: '100'};
-        }
-        return connectOptions;
     }
 
     /**
@@ -187,15 +163,6 @@ class Deploy {
             throw new Error('Archive file '+archiveFile+' does not exist.');
         }
         return archiveFileContents;
-    }
-
-    /**
-      * Get default profile name
-      * @param {argv} argv program arguments
-      * @return {String} defaultConnection profile name
-      */
-    static getDefaultProfileName(argv) {
-        return argv.connectionProfileName || DEFAULT_PROFILE_NAME;
     }
 
 }

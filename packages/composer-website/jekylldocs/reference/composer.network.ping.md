@@ -15,25 +15,24 @@ Note that ping also returns the participant information for the identity that wa
 an identity has been issued for the participant.
 
 ```
-composer network ping -n <business-network-name> -p <connection-profile-name> -i <enrollment-id> -s <enrollment-secret>
+composer network ping --card admin@tutorial-network
 ```
 
 ### Options
 ```
- --help                       Show help  [boolean]
-  -v, --version                Show version number  [boolean]
-  --businessNetworkName, -n    The business network name  [string] [required]
-  --connectionProfileName, -p  The connection profile name  [string]
-  --enrollId, -i               The enrollment ID of the user  [string] [required]
-  --enrollSecret, -s           The enrollment secret of the user  [string]
+Options:
+  --help         Show help  [boolean]
+  -v, --version  Show version number  [boolean]
+  --card, -c     The cardname to use to ping the network  [string]
 ```
 
 ## Example Output
 
 ```
-composer network ping -n digitalproperty-network -p hlfv1 -i admin -s adminpw
-The connection to the network was successfully tested:
-  version = 0.10.0
-  participant = <no participant found>
-Command completed successfully.
+composer network ping --card admin@tutorial-network
+The connection to the network was successfully tested: tutorial-network
+	version: 0.15.0-20171108090428
+	participant: org.hyperledger.composer.system.NetworkAdmin#admin
+
+Command succeeded
 ```

@@ -99,20 +99,38 @@ class ConnectionProfileManager {
         return this.connectionProfileStore.load(connectionProfile)
         .then((data) => {
             LOG.debug(METHOD,data);
-            let connectionManager  = connectionManagers[data.type];
+            return this.getConnectionManagerByType(data.type);
+        });
+    }
+
+   /**
+     * Retrieves the ConnectionManager for the given connection type.
+     *
+     * @param {string} connectionType The type of the connection type
+     * @return {Promise} A promise that is resolved with a {@link ConnectionManager}
+     * object once the connection is established, or rejected with a connection error.
+     */
+    getConnectionManagerByType(connectionType) {
+        const METHOD = 'getConnectionManagerByType';
+        LOG.info(METHOD,'Looking up a connection manager for type', connectionType);
+        let errorList = [];
+
+        return Promise.resolve()
+        .then(() => {
+            let connectionManager  = connectionManagers[connectionType];
             if(!connectionManager) {
-                const mod = `composer-connector-${data.type}`;
+                const mod = `composer-connector-${connectionType}`;
                 LOG.debug(METHOD,'Looking for module',mod);
                 try {
                     // Check for the connection manager class registered using
                     // registerConnectionManager (used by the web connector).
-                    let connectionManagerClass = connectionManagerClasses[data.type];
+                    let connectionManagerClass = connectionManagerClasses[connectionType];
                     if (connectionManagerClass) {
                         connectionManager = new(connectionManagerClass)(this);
                     } else {
                         // Not registered using registerConnectionManager, we now
                         // need to search for the connector module in our module
-                        // and all of the parent modules (the ones who require'd
+                        // and all of the parent modules (the ones who required
                         // us) as we do not depend on any connector modules.
                         let curmod = module;
                         while (curmod) {
@@ -120,6 +138,7 @@ class ConnectionProfileManager {
                                 connectionManager = new(curmod.require(mod))(this);
                                 break;
                             } catch (e) {
+                                errorList.push(e.message);
                                 LOG.info(METHOD,'No yet located the module ',e.message);
                                 // Continue to search the parent.
                             }
@@ -134,6 +153,7 @@ class ConnectionProfileManager {
                                     return true;
                                 } catch (e) {
                                     // Search the next one.
+                                    errorList.push(e.message);
                                     LOG.info(METHOD,e);
                                     return false;
                                 }
@@ -146,12 +166,19 @@ class ConnectionProfileManager {
                             connectionManager = new(require(mod))(this);
                         }
                     }
+
                 } catch (e) {
-                    const newError = new Error(`Failed to load connector module "${mod}" for connection profile "${connectionProfile}". ${e}`);
+                    // takes the error list, and filters out duplicate lines
+                    errorList.push(e.message);
+                    errorList.filter((element, index, self)=>{
+                        return index === self.indexOf(element);
+                    });
+
+                    const newError = new Error(`Failed to load connector module "${mod}" for connection type "${connectionType}". ${errorList.join('-')}`);
                     LOG.error(METHOD, newError);
                     throw newError;
                 }
-                connectionManagers[data.type] = connectionManager;
+                connectionManagers[connectionType] = connectionManager;
             }
             return connectionManager;
         });
@@ -167,7 +194,6 @@ class ConnectionProfileManager {
      * at runtime that override options set in the connection profile.
      * @return {Promise} A promise that is resolved with a {@link Connection}
      * object once the connection is established, or rejected with a connection error.
-     * @abstract
      */
     connect(connectionProfile, businessNetworkIdentifier, additionalConnectOptions) {
         LOG.info('connect','Connecting using ' + connectionProfile, businessNetworkIdentifier);
@@ -184,6 +210,33 @@ class ConnectionProfileManager {
             .then((connectionManager) => {
                 return connectionManager.connect(connectionProfile, businessNetworkIdentifier, connectOptions);
             });
+    }
+
+
+    /**
+     * Connect with the actuall connection profile data, so the look up of the connection profile
+     * is by passed as this has come direct from the business network card.
+     *
+     * @param {Object} connectionProfileData object representing of the connection profile
+     * @param {String} businessNetworkIdentifier id of the business network
+     * @param {Object} [additionalConnectOptions] additional options
+     * @return {Promise} A promise that is resolved with a {@link Connection}
+     * object once the connection is established, or rejected with a connection error.
+     */
+    connectWithData(connectionProfileData, businessNetworkIdentifier, additionalConnectOptions) {
+        let connectOptions = connectionProfileData;
+
+        return Promise.resolve().then( ()=>{
+            if (additionalConnectOptions) {
+                connectOptions = Object.assign(connectOptions, additionalConnectOptions);
+            }
+            return this.getConnectionManagerByType(connectOptions.type);
+        })
+        .then((connectionManager) => {
+            // todo - this connect is duplicating values
+            return connectionManager.connect(connectOptions.name, businessNetworkIdentifier, connectOptions);
+        });
+
     }
 
     /**

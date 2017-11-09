@@ -4,7 +4,7 @@ import { NgbModal } from '@ng-bootstrap/ng-bootstrap';
 import { ClientService } from '../../services/client.service';
 import { AlertService } from '../../basic-modals/alert.service';
 import { ResourceComponent } from '../resource/resource.component';
-import { ConfirmComponent } from '../../basic-modals/confirm/confirm.component';
+import { DeleteComponent } from '../../basic-modals/delete-confirm/delete-confirm.component';
 import { ViewTransactionComponent } from '../view-transaction/view-transaction.component';
 
 @Component({
@@ -24,7 +24,7 @@ export class RegistryComponent {
     private resources = [];
 
     private expandedResource = null;
-    private registryType: string = null;
+    private registryId: string = null;
 
     private overFlowedResources = {};
 
@@ -33,7 +33,7 @@ export class RegistryComponent {
         this._registry = registry;
         if (this._registry) {
             this.loadResources();
-            this.registryType = this._registry.registryType;
+            this.registryId = this._registry.id;
         }
     }
 
@@ -50,9 +50,9 @@ export class RegistryComponent {
                 private modalService: NgbModal) {
     }
 
-    loadResources() {
+    loadResources(): Promise<void> {
         this.overFlowedResources = {};
-        this._registry.getAll()
+        return this._registry.getAll()
             .then((resources) => {
                 if (this.isHistorian()) {
                     this.resources = resources.sort((a, b) => {
@@ -108,9 +108,12 @@ export class RegistryComponent {
     }
 
     openDeleteResourceModal(resource: any) {
-        const confirmModalRef = this.modalService.open(ConfirmComponent);
-        confirmModalRef.componentInstance.confirmMessage = 'Please confirm that you want to delete Asset: ' + resource.getIdentifier();
-
+        const confirmModalRef = this.modalService.open(DeleteComponent);
+        confirmModalRef.componentInstance.headerMessage = 'Delete Asset/Participant';
+        confirmModalRef.componentInstance.deleteMessage = 'This action will be recorded in the Historian, and cannot be reversed. Are you sure you want to delete?';
+        confirmModalRef.componentInstance.fileType = resource.$type;
+        confirmModalRef.componentInstance.fileName = resource.getIdentifier();
+        confirmModalRef.componentInstance.action = 'delete';
         confirmModalRef.result.then((result) => {
             if (result) {
                 this._registry.remove(resource)
@@ -125,14 +128,23 @@ export class RegistryComponent {
             } else {
                 // TODO: we should always get called with a code for this usage of the
                 // modal but will that always be true
+
             }
         });
     }
 
     viewTransactionData(transaction: any) {
-        let transactionModalRef = this.modalService.open(ViewTransactionComponent);
-        transactionModalRef.componentInstance.transaction = transaction;
-        transactionModalRef.componentInstance.events = transaction.eventsEmitted;
+        return this.clientService.resolveTransactionRelationship(transaction).then((resolvedTransction) => {
+            let transactionModalRef = this.modalService.open(ViewTransactionComponent);
+            transactionModalRef.componentInstance.transaction = resolvedTransction;
+            transactionModalRef.componentInstance.events = transaction.eventsEmitted;
+
+            transactionModalRef.result.catch((error) => {
+                if (error && error !== 1) {
+                    this.alertService.errorStatus$.next(error);
+                }
+            });
+        });
     }
 
     updateTableScroll(hasScroll) {
@@ -140,6 +152,6 @@ export class RegistryComponent {
     }
 
     private isHistorian(): boolean {
-        return this.registryType === 'Historian';
+        return this.registryId === 'org.hyperledger.composer.system.HistorianRecord';
     }
 }

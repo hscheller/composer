@@ -15,11 +15,7 @@
 'use strict';
 
 const cmdUtil = require('../../utils/cmdutils');
-const DEFAULT_PROFILE_NAME = 'defaultProfile';
-
 const ora = require('ora');
-// const chalk = require('chalk');
-
 
 /**
  * <p>
@@ -36,60 +32,26 @@ class Undeploy {
     */
     static handler(argv) {
         let adminConnection;
-        let enrollId;
-        let enrollSecret;
-        let connectionProfileName = Undeploy.getDefaultProfileName(argv);
-        let businessNetworkName;
-
+        let cardName = argv.card;
         let spinner;
 
-        return (() => {
-            if (!argv.enrollSecret) {
-                return cmdUtil.prompt({
-                    name: 'enrollmentSecret',
-                    description: 'What is the enrollment secret of the user?',
-                    required: true,
-                    hidden: true,
-                    replace: '*'
-                })
-                .then((result) => {
-                    argv.enrollSecret = result;
-                });
-            } else {
-                return Promise.resolve();
-            }
-        })()
-        .then(() => {
-            enrollId = argv.enrollId;
-            enrollSecret = argv.enrollSecret;
-            businessNetworkName = argv.businessNetworkName;
-            adminConnection = cmdUtil.createAdminConnection();
-            return adminConnection.connect(connectionProfileName, enrollId, enrollSecret,  businessNetworkName);
-        })
-          .then((result) => {
-              spinner = ora('Undeploying business network definition. This may take some seconds...').start();
-              return adminConnection.undeploy(businessNetworkName);
 
-          }).then((result) => {
-              spinner.succeed();
-              return result;
-          }).catch((error) => {
-
-              if (spinner) {
-                  spinner.fail();
-              }
-
-              throw error;
-          });
-    }
-
-    /**
-      * Get default profile name
-      * @param {argv} argv program arguments
-      * @return {String} defaultConnection profile name
-      */
-    static getDefaultProfileName(argv) {
-        return argv.connectionProfileName || DEFAULT_PROFILE_NAME;
+        adminConnection = cmdUtil.createAdminConnection();
+        return adminConnection.connect(cardName)
+            .then(() => {
+                // nothing is returned from connect
+                return adminConnection.getCard(cardName);
+            })
+            .then((card)=>{
+                spinner = ora('Undeploying business network definition. This may take some seconds...').start();
+                return adminConnection.undeploy(card.getBusinessNetworkName());
+            }).then((result) => {
+                spinner.succeed();
+                return result;
+            }).catch((error) => {
+                spinner.fail();
+                throw error;
+            });
     }
 
 }

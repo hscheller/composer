@@ -16,11 +16,9 @@
 
 const Admin = require('composer-admin');
 const BusinessNetworkDefinition = Admin.BusinessNetworkDefinition;
+const chalk = require('chalk');
 const fs = require('fs');
 const sanitize = require('sanitize-filename');
-
-// const ora = require('ora');
-const chalk = require('chalk');
 
 /**
  * Composer Create Archive command
@@ -99,9 +97,6 @@ class Create {
 
             );
 
-        }).catch(function(e) {
-            console.log(e.stack);
-            console.log(e); // "oh, no!"
         });
 
     }

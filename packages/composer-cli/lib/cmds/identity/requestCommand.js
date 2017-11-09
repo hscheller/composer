@@ -14,17 +14,15 @@
 
 'use strict';
 
-const Enroll = require ('./lib/request.js');
+const Request = require ('./lib/request.js');
 
 module.exports.command = 'request [options]';
 module.exports.describe = 'Request an identity\'s certificate and key';
 module.exports.builder = {
-    connectionProfileName: {alias: 'p', required: true, describe: 'The connection profile name', type: 'string' },
-    enrollId: { alias: 'i', required: true, describe: 'The enrollment ID of the user', type: 'string' },
-    enrollSecret: { alias: 's', required: false, describe: 'The enrollment secret of the user', type: 'string' },
+    card: { alias: 'c', required: true, describe: 'Name of the network card to use', type: 'string'},
     path: { alias: 'd', required: false, describe: 'path where to store the certificates and key', type: 'string' }
 };
 
 module.exports.handler = (argv) => {
-    return argv.thePromise = Enroll.handler(argv);
+    return argv.thePromise = Request.handler(argv);
 };

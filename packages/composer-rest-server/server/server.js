@@ -24,6 +24,7 @@ const loopback = require('loopback');
 const loopbackPassport = require('loopback-component-passport');
 const path = require('path');
 const session = require('express-session');
+const Util = require('../lib/util');
 const WebSocket = require('ws');
 
 module.exports = function (composer) {
@@ -41,10 +42,10 @@ module.exports = function (composer) {
         app.set('composer', composer);
 
         // Load the model-config.json file; we want to make the visibility of the wallet
-        // model dependent on whether or not security is enabled.
+        // model dependent on whether or not the multiple user option has been specified.
         const models = require('./model-config.json');
-        const security = !!composer.security;
-        models.Wallet.public = security;
+        const multiuser = !!composer.multiuser;
+        models.Card.public = multiuser;
 
         // Allow environment variable overrides for the datasources.json file.
         let dataSources = require('./datasources.json');
@@ -92,9 +93,9 @@ module.exports = function (composer) {
             extended: true,
         }));
 
-        // The following configuration is only required if security is enabled.
-        const security = !!composer.security;
-        if (security) {
+        // The following configuration is only required if the authentication option has been specified.
+        const authentication = !!composer.authentication;
+        if (authentication) {
 
             // Enable the use of access tokens to identify users.
             app.middleware('auth', loopback.token({
@@ -128,13 +129,24 @@ module.exports = function (composer) {
             for (let s in providers) {
                 let c = providers[s];
                 c.session = c.session !== false;
+                c.profileToUser = Util.profileToUser;
                 passportConfigurator.configureProvider(s, c);
             }
 
             // Add a GET handler for logging out.
             app.get('/auth/logout', function (req, res, next) {
-                req.logout();
-                res.redirect('/');
+                return Promise.resolve()
+                    .then(() => {
+                        if (req.accessToken) {
+                            return app.models.user.logout(req.accessToken.id);
+                        }
+                    })
+                    .then(() => {
+                        req.logout();
+                        res.clearCookie('access_token');
+                        res.clearCookie('userId');
+                        res.redirect('/');
+                    });
             });
 
         }

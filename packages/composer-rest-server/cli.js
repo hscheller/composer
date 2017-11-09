@@ -17,13 +17,11 @@
 
 process.env.SUPPRESS_NO_CONFIG_WARNING = true;
 
-const chalk = require('chalk');
-const clear = require('clear');
-const figlet = require('figlet');
+const version = 'v' + require('./package.json').version;
+
 const path = require('path');
 const server = require('./server/server');
 const Util = require('./lib/util');
-const _ = require('lodash');
 
 const defaultTlsCertificate = path.resolve(__dirname, 'cert.pem');
 const defaultTlsKey = path.resolve(__dirname, 'key.pem');
@@ -31,25 +29,17 @@ const defaultTlsKey = path.resolve(__dirname, 'key.pem');
 const yargs = require('yargs')
     .wrap(null)
     .usage('Usage: $0 [options]')
-    .option('p', { alias: 'connectionProfileName', describe: 'The connection profile name', type: 'string', default: process.env.COMPOSER_CONNECTION_PROFILE })
-    .option('n', { alias: 'businessNetworkName', describe: 'The business network identifier', type: 'string', default: process.env.COMPOSER_BUSINESS_NETWORK })
-    .option('i', { alias: 'enrollId', describe: 'The enrollment ID of the user', type: 'string', default: process.env.COMPOSER_ENROLLMENT_ID })
-    .option('s', { alias: 'enrollSecret', describe: 'The enrollment secret of the user', type: 'string', default: process.env.COMPOSER_ENROLLMENT_SECRET })
-    .option('N', { alias: 'namespaces', describe: 'Use namespaces if conflicting types exist', type: 'string', default: process.env.COMPOSER_NAMESPACES || 'always', choices: ['always', 'required', 'never'] })
-    .option('P', { alias: 'port', describe: 'The port to serve the REST API on', type: 'number', default: process.env.COMPOSER_PORT || undefined })
-    .option('S', { alias: 'security', describe: 'Enable security for the REST API', type: 'boolean', default: process.env.COMPOSER_SECURITY || false })
+    .option('c', { alias: 'card', describe: 'The name of the business network card to use', type: 'string', default: process.env.COMPOSER_CARD || undefined })
+    .option('n', { alias: 'namespaces', describe: 'Use namespaces if conflicting types exist', type: 'string', default: process.env.COMPOSER_NAMESPACES || 'always', choices: ['always', 'required', 'never'] })
+    .option('p', { alias: 'port', describe: 'The port to serve the REST API on', type: 'number', default: process.env.COMPOSER_PORT || undefined })
+    .option('a', { alias: 'authentication', describe: 'Enable authentication for the REST API using Passport', type: 'boolean', default: process.env.COMPOSER_AUTHENTICATION || false })
+    .option('m', { alias: 'multiuser', describe: 'Enable multiple user and identity management using wallets (implies -a)', type: 'boolean', default: process.env.COMPOSER_MULTIUSER || false })
     .option('w', { alias: 'websockets', describe: 'Enable event publication over WebSockets', type: 'boolean', default: process.env.COMPOSER_WEBSOCKETS || true })
     .option('t', { alias: 'tls', describe: 'Enable TLS security for the REST API', type: 'boolean', default: process.env.COMPOSER_TLS || false })
-    .option('c', { alias: 'tlscert', describe: 'File containing the TLS certificate', type: 'string', default: process.env.COMPOSER_TLS_CERTIFICATE || defaultTlsCertificate })
+    .option('e', { alias: 'tlscert', describe: 'File containing the TLS certificate', type: 'string', default: process.env.COMPOSER_TLS_CERTIFICATE || defaultTlsCertificate })
     .option('k', { alias: 'tlskey', describe: 'File containing the TLS private key', type: 'string', default: process.env.COMPOSER_TLS_KEY || defaultTlsKey })
     .alias('v', 'version')
-    .version(() => {
-        return getInfo('composer-rest-server')+
-          getInfo('composer-admin')+getInfo('composer-client')+
-          getInfo('composer-common')+getInfo('composer-runtime-hlf')+
-          getInfo('composer-connector-hlf')+getInfo('composer-runtime-hlfv1')+
-          getInfo('composer-connector-hlfv1');
-    })
+    .version(version)
     .help('h')
     .alias('h', 'help')
     .argv;
@@ -59,29 +49,20 @@ const yargs = require('yargs')
 // and then check to see that none of the required arguments have
 // been supplied via environment variables have been specified either.
 const interactive = process.argv.slice(2).length === 0 && // No command line arguments supplied.
-                    ['n', 'p', 'i', 's'].every((flag) => {
+                    ['c'].every((flag) => {
                         return yargs[flag] === undefined;
                     });
 let promise;
 if (interactive) {
-    // Gather some args interactively
-    clear();
-    console.log(
-        chalk.yellow(
-            figlet.textSync('Hyperledger-Composer', { horizontalLayout: 'full' })
-        )
-    );
     // Get details of the server that we want to run
     promise = Util.getConnectionSettings()
         .then((answers) => {
             // augment the app with the extra config that we've just collected
             const composer = {
-                connectionProfileName: answers.profilename,
-                businessNetworkIdentifier: answers.businessNetworkId,
-                participantId: answers.userid,
-                participantPwd: answers.secret,
+                card: answers.card,
                 namespaces: answers.namespaces,
-                security: answers.security,
+                authentication: answers.authentication,
+                multiuser: answers.multiuser,
                 websockets: answers.websockets,
                 tls: answers.tls,
                 tlscert: answers.tlscert,
@@ -90,16 +71,14 @@ if (interactive) {
             console.log('\nTo restart the REST server using the same options, issue the following command:');
             let cmd = [ 'composer-rest-server' ];
             const args = {
-                '-p': 'connectionProfileName',
-                '-n': 'businessNetworkIdentifier',
-                '-i': 'participantId',
-                '-s': 'participantPwd',
-                '-N': 'namespaces',
-                '-P': 'port',
-                '-S': 'security',
+                '-c': 'card',
+                '-n': 'namespaces',
+                '-p': 'port',
+                '-a': 'authentication',
+                '-m': 'multiuser',
                 '-w': 'websockets',
                 '-t': 'tls',
-                '-c': 'tlscert',
+                '-e': 'tlscert',
                 '-k': 'tlskey'
             };
             for (let arg in args) {
@@ -114,21 +93,25 @@ if (interactive) {
         });
 
 } else {
+
+    // if -m (multiuser) was specified, it implies -a (authentication)
+    if (yargs.m) {
+        yargs.a = true;
+    }
+
     // make sure we have args for all required parms otherwise error
-    if (yargs.p === undefined || yargs.n === undefined || yargs.i === undefined || yargs.s === undefined) {
+    if (yargs.c === undefined) {
         promise = Promise.reject('Missing parameter. Please run composer-rest-server -h to see usage details');
     } else {
         promise = Promise.resolve({
-            connectionProfileName: yargs.p,
-            businessNetworkIdentifier: yargs.n,
-            participantId: yargs.i,
-            participantPwd: yargs.s,
-            namespaces: yargs.N,
-            port: yargs.P,
-            security: yargs.S,
+            card: yargs.c,
+            namespaces: yargs.n,
+            port: yargs.p,
+            authentication: yargs.a,
+            multiuser: yargs.m,
             websockets: yargs.w,
             tls: yargs.t,
-            tlscert: yargs.c,
+            tlscert: yargs.e,
             tlskey: yargs.k
         });
     }
@@ -160,21 +143,3 @@ module.exports = promise.then((composer) => {
     console.error(error);
     process.exit(1);
 });
-
-/**
- * [getInfo description]
- * @param  {[type]} moduleName [description]
- * @return {[type]}            [description]
- */
-function getInfo(moduleName) {
-
-    try{
-        let pjson = ((moduleName=== 'composer-rest-server') ? require('./package.json') : require(moduleName).version);
-        return _.padEnd(pjson.name,30) + ' v'+pjson.version+'\n';
-    }
-    catch (error){
-      // oh well - we'll just return a blank string
-        return '';
-    }
-
-}

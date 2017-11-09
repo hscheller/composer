@@ -15,7 +15,6 @@
 'use strict';
 
 const cmdUtil = require('../../utils/cmdutils');
-const DEFAULT_PROFILE_NAME = 'defaultProfile';
 
 /**
  * <p>
@@ -35,11 +34,14 @@ class Submit {
         let businessNetworkConnection;
         let enrollId;
         let enrollSecret;
-        let connectionProfileName = Submit.getDefaultProfileName(argv);
+        let connectionProfileName = argv.connectionProfileName;
         let businessNetworkName;
+        let cardName = argv.card;
+        let usingCard = !(cardName===undefined);
+
 
         return (() => {
-            if (!argv.enrollSecret) {
+            if (!argv.enrollSecret && !usingCard) {
                 return cmdUtil.prompt({
                     name: 'enrollmentSecret',
                     description: 'What is the enrollment secret of the user?',
@@ -48,7 +50,7 @@ class Submit {
                     replace: '*'
                 })
                 .then((result) => {
-                    argv.enrollSecret = result;
+                    argv.enrollSecret = result.enrollmentSecret;
                 });
             } else {
                 return Promise.resolve();
@@ -59,7 +61,11 @@ class Submit {
             enrollSecret = argv.enrollSecret;
             businessNetworkName = argv.businessNetworkName;
             businessNetworkConnection = cmdUtil.createBusinessNetworkConnection();
-            return businessNetworkConnection.connect(connectionProfileName, businessNetworkName, enrollId, enrollSecret);
+            if (!usingCard){
+                return businessNetworkConnection.connectWithDetails(connectionProfileName, businessNetworkName, enrollId, enrollSecret);
+            } else {
+                return businessNetworkConnection.connect(cardName);
+            }
         })
         .then(() => {
             let data = argv.data;
@@ -87,15 +93,6 @@ class Submit {
         .then((submitted) => {
             console.log('Transaction Submitted.');
         });
-    }
-
-    /**
-      * Get default profile name
-      * @param {argv} argv program arguments
-      * @return {String} defaultConnection profile name
-      */
-    static getDefaultProfileName(argv) {
-        return argv.connectionProfileName || DEFAULT_PROFILE_NAME;
     }
 
 }

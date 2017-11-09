@@ -2,7 +2,7 @@
 layout: default
 title: Hyperledger Composer CLI Commands
 section: reference
-index-order: 908
+index-order: 1008
 sidebar: sidebars/accordion-toc0.md
 excerpt: The [**list of all Hyperledger Composer CLI commands**](./commands.html) for performing multiple administrative, operational, and development tasks.
 ---
@@ -30,6 +30,28 @@ Create a Business Network Archive from a directory on disk: [composer archive cr
 
 Verify the contents of a Business Network Archive on disk: [composer archive list](./composer.archive.list.html)
 
+## Business Network Card Management
+
+`composer card create`
+
+Creates a business network card from a connection profile, business network name, and certificates: [composer card create](./composer.card.create.html)
+
+`composer card delete`
+
+Deletes a business network card which you have imported locally: [composer card delete](./composer.card.delete.html)
+
+`composer card import`
+
+Imports a created card into your local wallet: [composer card import](./composer.card.import.html)
+
+`composer card export`
+
+Exports and packages a card from your wallet: [composer card export](./composer.card.export.html)
+
+`composer card list`
+
+Lists all cards currently in your wallet: [composer card list](./composer.card.list.html)
+
 ## Business Network management
 
 `composer network deploy`
@@ -46,7 +68,7 @@ List the contents of a deployed Business Network: [composer network list](./comp
 
 `composer network loglevel`
 
-Return or update the log level for the composer runtime: [`composer network loglevel`](./composer.network.loglevel.html)
+Return or update the log level for the composer runtime: [`composer network loglevel`](./composer.network.logLevel.html)
 
 `composer network ping`
 
@@ -67,6 +89,11 @@ Deploy a business network archive to a {{site.data.conrefs.hlf_full}} peer that 
 `composer runtime install`
 
 Install the {{site.data.conrefs.composer_full}} runtime to a {{site.data.conrefs.hlf_full}} peer: [composer runtime install](./composer.runtime.install.html)
+
+`composer network upgrade`
+
+Upgrade the {{site.data.conrefs.composer_full}} runtime of a specific deployed business network: [composer network upgrade](./composer.network.upgrade.md)
+
 
 ## Participant and Identity management
 
@@ -89,10 +116,6 @@ List all identities in a business network: [composer identity list](./composer.i
 `composer identity revoke`
 
 Revoke an identity from a participant: [composer identity revoke](./composer.identity.revoke.html)
-
-`composer identity import`
-
-Import an identity to your local identity wallet: [composer identity import](./composer.identity.import.html)
 
 ## Transaction execution
 

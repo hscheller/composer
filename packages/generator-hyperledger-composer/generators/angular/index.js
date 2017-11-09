@@ -1,3 +1,16 @@
+/*
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 'use strict';
 const Util = require('./../util');
 let yeoman = require('yeoman-generator');
@@ -21,6 +34,7 @@ let assetServiceNames = [];
 let assetComponentNames = [];
 let transactionList = [];
 let namespaceList;
+let enumerations;
 let introspector;
 let assetProperties;
 let destinationPath;
@@ -40,6 +54,7 @@ let apiIP;
 let apiPort;
 let apiNamespace;
 let fileName;
+let cardName;
 
 module.exports = yeoman.Base.extend({
     constructor: function () {
@@ -113,38 +128,10 @@ module.exports = yeoman.Base.extend({
                     },
                     {
                         type: 'input',
-                        name: 'networkIdentifier',
-                        message: 'Business network identifier:',
-                        default: 'digitalproperty-network',
+                        name: 'cardName',
+                        message: 'Name of the Business Network card:',
                         store: true,
-                        when: function (answers) {
-                            return !answers.isNpmSameAsNetworkIdentifier;
-                        },
-                        validate: Util.validateBusinessNetworkName
-                    },
-                    {
-                        type: 'input',
-                        name: 'connectionProfileName',
-                        message: 'Connection profile:',
-                        default: 'defaultProfile',
-                        store: true,
-                        validate: Util.validateConnectionProfileName
-                    },
-                    {
-                        type: 'input',
-                        name: 'enrollmentId',
-                        message: 'Enrollment ID:',
-                        store: true,
-                        default: 'admin',
-                        validate: Util.validateEnrollmentId
-                    },
-                    {
-                        type: 'input',
-                        name: 'enrollmentSecret',
-                        message: 'Enrollment secret:',
-                        store: true,
-                        default: 'adminpw',
-                        validate: Util.validateEnrollmentSecret
+                        validate: Util.cardName
                     },
                     {
                         type: 'list',
@@ -234,10 +221,7 @@ module.exports = yeoman.Base.extend({
                     let nextQuestions;
 
                     if (liveNetwork) {
-                        networkIdentifier = answers.networkIdentifier;
-                        connectionProfileName = answers.connectionProfileName;
-                        enrollmentId = answers.enrollmentId;
-                        enrollmentSecret = answers.enrollmentSecret;
+                        cardName = answers.cardName;
                         apiServer = answers.apiServer;
 
                         if (apiServer === 'generate') {
@@ -365,7 +349,7 @@ module.exports = yeoman.Base.extend({
         let completedApp = new Promise((resolve, reject) => {
 
             if (liveNetwork) {
-                return businessNetworkConnection.connect(connectionProfileName, networkIdentifier, enrollmentId, enrollmentSecret)
+                return businessNetworkConnection.connect(cardName)
                     .then((result) => {
                         businessNetworkDefinition = result;
                         return businessNetworkConnection.disconnect();
@@ -409,6 +393,7 @@ module.exports = yeoman.Base.extend({
 
             modelManager = introspector.getModelManager();
             namespaceList = modelManager.getNamespaces();
+            enumerations = modelManager.getEnumDeclarations();
 
             shell.mkdir('-p', destinationPath + '/src/assets/');
             namespaceList.forEach((namespace) => {
@@ -433,7 +418,25 @@ module.exports = yeoman.Base.extend({
 
                     assetProperties.forEach((property) => {
                         if (property.constructor.name === 'Field') {
-                            if (property.isTypeEnum() || property.isPrimitive() || !property.isPrimitive()) {
+                            if (property.isTypeEnum()) {
+                                // handle enumerations
+                                let enumValues = [];
+                                // compose array of enumeration values
+                                enumerations.forEach(enumeration => {
+                                    if (enumeration.name === property.getType()) {
+                                        enumValues = enumeration.properties;
+                                    }
+                                });
+                                // add meta information to the field list
+                                tempList.push({
+                                    'name': property.getName(),
+                                    'type': property.getType(),
+                                    'enum': true,
+                                    'array': property.array === true,
+                                    enumValues,
+                                });
+                            } else if (property.isPrimitive() || !property.isPrimitive()) {
+
                                 tempList.push({
                                     'name': property.getName(),
                                     'type': property.getType()
@@ -562,7 +565,8 @@ module.exports = yeoman.Base.extend({
             apiServer: apiServer,
             apiIP: apiIP,
             apiPort: apiPort,
-            apiNamespace: apiNamespace
+            apiNamespace: apiNamespace,
+            cardName: cardName
         };
     },
 

@@ -15,7 +15,6 @@
 'use strict';
 
 const cmdUtil = require('../../utils/cmdutils');
-const DEFAULT_PROFILE_NAME = 'defaultProfile';
 const ora = require('ora');
 const Pretty = require('prettyjson');
 
@@ -34,38 +33,15 @@ class List {
     */
     static handler(argv) {
         let businessNetworkConnection;
-        let enrollId;
-        let enrollSecret;
-        let connectionProfileName = List.getDefaultProfileName(argv);
-        let businessNetworkName = argv.businessNetworkName;
         let businessNetworkDefinition;
+        let cardName = argv.card;
 
-        const spinner = ora('List all identities in the business network '+businessNetworkName);
-        return (() => {
+        const spinner = ora('List all identities in the business network ');
+        spinner.start();
 
-            if (!argv.enrollSecret) {
-                return cmdUtil.prompt({
-                    name: 'enrollmentSecret',
-                    description: 'What is the enrollment secret of the user?',
-                    required: true,
-                    hidden: true,
-                    replace: '*'
-                })
-                .then((result) => {
-                    argv.enrollSecret = result;
-                });
-            } else {
-                return Promise.resolve();
-            }
-        })()
-        .then(() => {
-            spinner.start();
-            enrollId = argv.enrollId;
-            enrollSecret = argv.enrollSecret;
-            businessNetworkName = argv.businessNetworkName;
-            businessNetworkConnection = cmdUtil.createBusinessNetworkConnection();
-            return businessNetworkConnection.connect(connectionProfileName, businessNetworkName, enrollId, enrollSecret);
-        })
+        businessNetworkConnection = cmdUtil.createBusinessNetworkConnection();
+        return businessNetworkConnection.connect(cardName)
+
         .then((result) => {
             businessNetworkDefinition = result;
             return businessNetworkConnection.getIdentityRegistry();
@@ -90,15 +66,6 @@ class List {
             spinner.fail();
             throw error;
         });
-    }
-
-    /**
-      * Get default profile name
-      * @param {argv} argv program arguments
-      * @return {String} defaultConnection profile name
-      */
-    static getDefaultProfileName(argv) {
-        return argv.connectionProfileName || DEFAULT_PROFILE_NAME;
     }
 
 }

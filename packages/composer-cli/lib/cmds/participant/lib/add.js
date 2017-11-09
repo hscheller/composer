@@ -15,51 +15,26 @@
 'use strict';
 
 const cmdUtil = require('../../utils/cmdutils');
-const DEFAULT_PROFILE_NAME = 'defaultProfile';
 
 /**
- * <p>
  * Composer "participant add" command
- * </p>
- * <p><a href="diagrams/Deploy.svg"><img src="diagrams/deploy.svg" style="width:100%;"/></a></p>
  * @private
  */
 class Add {
 
   /**
-    * Command process for deploy command
+    * Command process for "participant add" command
     * @param {string} argv argument list from composer command
     * @return {Promise} promise when command complete
     */
     static handler(argv) {
         let businessNetworkConnection;
-        let enrollId;
-        let enrollSecret;
-        let connectionProfileName = Add.getDefaultProfileName(argv);
-        let businessNetworkName;
+        let cardName = argv.card;
 
-        return (() => {
-            if (!argv.enrollSecret) {
-                return cmdUtil.prompt({
-                    name: 'enrollmentSecret',
-                    description: 'What is the enrollment secret of the user?',
-                    required: true,
-                    hidden: true,
-                    replace: '*'
-                })
-                .then((result) => {
-                    argv.enrollSecret = result;
-                });
-            } else {
-                return Promise.resolve();
-            }
-        })()
+        return Promise.resolve()
         .then(() => {
-            enrollId = argv.enrollId;
-            enrollSecret = argv.enrollSecret;
-            businessNetworkName = argv.businessNetworkName;
             businessNetworkConnection = cmdUtil.createBusinessNetworkConnection();
-            return businessNetworkConnection.connect(connectionProfileName, businessNetworkName, enrollId, enrollSecret);
+            return businessNetworkConnection.connect(cardName);
         })
         .then(() => {
             let data = argv.data;
@@ -77,15 +52,6 @@ class Add {
         .then((submitted) => {
             console.log('Participant was added to participant registry.');
         });
-    }
-
-    /**
-      * Get default profile name
-      * @param {argv} argv program arguments
-      * @return {String} defaultConnection profile name
-      */
-    static getDefaultProfileName(argv) {
-        return argv.connectionProfileName || DEFAULT_PROFILE_NAME;
     }
 
 }

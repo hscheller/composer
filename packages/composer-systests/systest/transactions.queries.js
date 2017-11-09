@@ -94,9 +94,6 @@ describe('Transaction (query specific) system tests', () => {
     }
 
     before(function () {
-        if (TestUtil.isHyperledgerFabricV06()) {
-            return this.skip();
-        }
         const modelFiles = [
             { fileName: 'models/transactions.queries.cto', contents: fs.readFileSync(path.resolve(__dirname, 'data/transactions.queries.cto'), 'utf8') }
         ];
@@ -144,14 +141,8 @@ describe('Transaction (query specific) system tests', () => {
                 participantsAsJSON.sort(function (a, b) {
                     return a.participantId.localeCompare(b.participantId);
                 });
-            });
-    });
-
-    beforeEach(function () {
-        if (TestUtil.isHyperledgerFabricV06()) {
-            return this.skip();
-        }
-        return client.getAssetRegistry('systest.transactions.queries.SampleAsset')
+                return client.getAssetRegistry('systest.transactions.queries.SampleAsset');
+            })
             .then((assetRegistry) => {
                 return assetRegistry.addAll(assetsAsResources);
             })
@@ -161,6 +152,10 @@ describe('Transaction (query specific) system tests', () => {
             .then((participantRegistry) => {
                 return participantRegistry.addAll(participantsAsResources);
             });
+    });
+
+    after(function () {
+        return TestUtil.undeploy(businessNetworkDefinition);
     });
 
     ['assets', 'participants'].forEach((type) => {

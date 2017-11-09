@@ -15,6 +15,8 @@ require('chai').should();
 var bfs_fs = BrowserFS.BFSRequire('fs');
 var NS = '<%= namespace%>';
 
+var assetType = 'SampleAsset';
+
 describe('#'+NS, function() {
 
     var businessNetworkConnection;
@@ -26,7 +28,7 @@ describe('#'+NS, function() {
             type: 'embedded'
         })
         .then(function() {
-            return adminConnection.connect('defaultProfile', 'admin', 'Xurw3yU9zI0l');
+            return adminConnection.connectWithDetails('defaultProfile', 'admin', 'Xurw3yU9zI0l');
         })
         .then(function() {
             return BusinessNetworkDefinition.fromDirectory(path.resolve(__dirname, '..'));
@@ -36,13 +38,13 @@ describe('#'+NS, function() {
         })
         .then(function() {
             businessNetworkConnection = new BusinessNetworkConnection({ fs: bfs_fs });
-            return businessNetworkConnection.connect('defaultProfile', '<%= appname%>', 'admin', 'Xurw3yU9zI0l');
+            return businessNetworkConnection.connectWithDetails('defaultProfile', '<%= appname%>', 'admin', 'Xurw3yU9zI0l');
         });
     });
 
     describe('ChangeAssetValue()', function() {
 
-        it('should change the value property of Asset to newValue', () => {
+        it('should change the value property of ' + assetType + ' to newValue', () => {
 
             var factory = businessNetworkConnection.getBusinessNetwork().getFactory();
 
@@ -50,15 +52,15 @@ describe('#'+NS, function() {
             var user = factory.newResource(NS, 'User', '<%= appauthor%>');
 
             // create the asset
-            var asset = factory.newResource(NS, 'Asset', 'ASSET_001');
+            var asset = factory.newResource(NS, assetType, 'ASSET_001');
             asset.value = 'old-value';
 
             var changeAssetValue = factory.newTransaction(NS, 'ChangeAssetValue');
-            changeAssetValue.relatedAsset = factory.newRelationship(NS, 'Asset', asset.$identifier);
+            changeAssetValue.relatedAsset = factory.newRelationship(NS, assetType, asset.$identifier);
             changeAssetValue.newValue = 'new-value';
 
             // Get the asset registry.
-            return businessNetworkConnection.getAssetRegistry(NS + '.Asset')
+            return businessNetworkConnection.getAssetRegistry(NS + '.' + assetType)
             .then(function(registry) {
 
                 // Add the Asset to the asset registry.
@@ -74,7 +76,7 @@ describe('#'+NS, function() {
                     return businessNetworkConnection.submitTransaction(changeAssetValue);
                 })
                 .then(function() {
-                    return businessNetworkConnection.getAssetRegistry(NS + '.Asset');
+                    return businessNetworkConnection.getAssetRegistry(NS + '.' + assetType);
                 })
                 .then(function(registry) {
                     // get the listing

@@ -14,10 +14,8 @@
 
 'use strict';
 
-const cmdUtil = require('../../utils/cmdutils');
-const DEFAULT_PROFILE_NAME = 'defaultProfile';
-
 const chalk = require('chalk');
+const cmdUtil = require('../../utils/cmdutils');
 
 /**
  * <p>
@@ -34,45 +32,12 @@ class LogLevel {
     */
     static handler(argv) {
         let adminConnection;
-        let enrollId;
-        let enrollSecret;
-        let connectionProfileName;
         let businessNetworkName;
-        let newlevel;
+        let newlevel = argv.newlevel;
+        let cardName = argv.card;
 
-        if (argv.newlevel) {
-            // validate log level as yargs cannot at this time
-            // https://github.com/yargs/yargs/issues/849
-            newlevel = argv.newlevel.toUpperCase();
-            if (!LogLevel.validLogLevel(newlevel)) {
-                return Promise.reject(new Error('newlevel unspecified or not one of (INFO|WARNING|ERROR|DEBUG)'));
-            }
-        }
-
-        return (() => {
-            if (!argv.enrollSecret) {
-                return cmdUtil.prompt({
-                    name: 'enrollmentSecret',
-                    description: 'What is the enrollment secret of the user?',
-                    required: true,
-                    hidden: true,
-                    replace: '*'
-                })
-                .then((result) => {
-                    argv.enrollSecret = result;
-                });
-            } else {
-                return Promise.resolve();
-            }
-        })()
-        .then(() => {
-            enrollId = argv.enrollId;
-            enrollSecret = argv.enrollSecret;
-            businessNetworkName = argv.businessNetworkName;
-            connectionProfileName = argv.connectionProfileName;
-            adminConnection = cmdUtil.createAdminConnection();
-            return adminConnection.connect(connectionProfileName, enrollId, enrollSecret, businessNetworkName);
-        })
+        adminConnection = cmdUtil.createAdminConnection();
+        return adminConnection.connect(cardName)
         .then(() => {
             if (newlevel) {
                 return adminConnection.setLogLevel(newlevel);
@@ -90,36 +55,6 @@ class LogLevel {
             throw error;
         });
     }
-
-    /**
-      * Get default profile name
-      * @param {argv} argv program arguments
-      * @return {String} defaultConnection profile name
-      */
-    static getDefaultProfileName(argv) {
-        return argv.connectionProfileName || DEFAULT_PROFILE_NAME;
-    }
-
-    /**
-     * check the loglevel specified matches the known set
-     *
-     * @static
-     * @param {string} logLevel the loglevel to check
-     * @returns {boolean} true if valid, false otherwise
-     * @memberof LogLevel
-     */
-    static validLogLevel(logLevel) {
-
-        switch (logLevel) {
-        case 'INFO':
-        case 'WARNING':
-        case 'ERROR':
-        case 'DEBUG':
-            return true;
-        }
-        return false;
-    }
-
 }
 
 module.exports = LogLevel;

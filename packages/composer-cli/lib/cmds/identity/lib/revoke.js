@@ -15,7 +15,6 @@
 'use strict';
 
 const cmdUtil = require('../../utils/cmdutils');
-const DEFAULT_PROFILE_NAME = 'defaultProfile';
 
 /**
  * <p>
@@ -32,51 +31,18 @@ class Revoke {
     * @return {Promise} promise when command complete
     */
     static handler(argv) {
-        let businessNetworkConnection;
-        let enrollId;
-        let enrollSecret;
-        let connectionProfileName = Revoke.getDefaultProfileName(argv);
-        let businessNetworkName;
+        let cardName = argv.card;
         let identityId = argv.identityId;
+        let businessNetworkConnection;
 
-        return (() => {
-            if (!argv.enrollSecret) {
-                return cmdUtil.prompt({
-                    name: 'enrollmentSecret',
-                    description: 'What is the enrollment secret of the user?',
-                    required: true,
-                    hidden: true,
-                    replace: '*'
-                })
-                .then((result) => {
-                    argv.enrollSecret = result;
-                });
-            } else {
-                return Promise.resolve();
-            }
-        })()
-        .then(() => {
-            enrollId = argv.enrollId;
-            enrollSecret = argv.enrollSecret;
-            businessNetworkName = argv.businessNetworkName;
-            businessNetworkConnection = cmdUtil.createBusinessNetworkConnection();
-            return businessNetworkConnection.connect(connectionProfileName, businessNetworkName, enrollId, enrollSecret);
-        })
+        businessNetworkConnection = cmdUtil.createBusinessNetworkConnection();
+        return businessNetworkConnection.connect(cardName)
         .then(() => {
             return businessNetworkConnection.revokeIdentity(identityId);
         })
         .then((result) => {
             console.log(`The identity '${identityId}' was revoked and can no longer be used to connect to the business network.`);
         });
-    }
-
-    /**
-      * Get default profile name
-      * @param {argv} argv program arguments
-      * @return {String} defaultConnection profile name
-      */
-    static getDefaultProfileName(argv) {
-        return argv.connectionProfileName || DEFAULT_PROFILE_NAME;
     }
 
 }

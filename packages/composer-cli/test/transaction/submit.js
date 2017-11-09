@@ -31,16 +31,12 @@ const sinon = require('sinon');
 chai.should();
 chai.use(require('chai-things'));
 chai.use(require('chai-as-promised'));
-// let expect = chai.expect;
 
 const NAMESPACE = 'net.biz.TestNetwork';
 const BUSINESS_NETWORK_NAME = 'net.biz.TestNetwork-0.0.1';
-const DEFAULT_PROFILE_NAME = 'defaultProfile';
 const ENROLL_ID = 'SuccessKid';
 const ENROLL_SECRET = 'SuccessKidWin';
 
-//const DEFAULT_PROFILE_NAME = 'defaultProfile';
-// const CREDENTIALS_ROOT = homedir() + '/.composer-credentials';
 
 
 describe('composer transaction submit CLI unit tests', () => {
@@ -73,7 +69,7 @@ describe('composer transaction submit CLI unit tests', () => {
     describe('#hander', () => {
         it('should submit a transaction when all requred params are specified', () => {
             let argv = {
-                connectionProfileName: DEFAULT_PROFILE_NAME,
+                connectionProfileName: 'someOtherProfile',
                 businessNetworkName: BUSINESS_NETWORK_NAME,
                 enrollId: ENROLL_ID,
                 enrollSecret: ENROLL_SECRET,
@@ -82,29 +78,9 @@ describe('composer transaction submit CLI unit tests', () => {
 
             return Submit.handler(argv)
             .then((res) => {
-                sinon.assert.calledOnce(mockBusinessNetworkConnection.connect);
-                sinon.assert.calledWith(mockBusinessNetworkConnection.connect, argv.connectionProfileName, argv.businessNetworkName, argv.enrollId, argv.enrollSecret);
-                sinon.assert.calledOnce(mockBusinessNetworkConnection.getBusinessNetwork);
-                sinon.assert.calledOnce(mockBusinessNetwork.getSerializer);
-                sinon.assert.calledOnce(mockSerializer.fromJSON);
-                sinon.assert.calledWith(mockSerializer.fromJSON, JSON.parse(argv.data));
-
-            });
-        });
-
-        it('should not error when connection profile name is not given', () => {
-
-            let argv = {
-                businessNetworkName: BUSINESS_NETWORK_NAME,
-                enrollId: ENROLL_ID,
-                enrollSecret: ENROLL_SECRET,
-                data: '{"$class": "'+NAMESPACE+'", "success": true}'
-            };
-
-            return Submit.handler(argv)
-            .then((res) => {
-                sinon.assert.calledOnce(mockBusinessNetworkConnection.connect);
-                sinon.assert.calledWith(mockBusinessNetworkConnection.connect, 'defaultProfile', argv.businessNetworkName, argv.enrollId, argv.enrollSecret);
+                argv.thePromise.should.be.a('promise');
+                sinon.assert.calledOnce(mockBusinessNetworkConnection.connectWithDetails);
+                sinon.assert.calledWith(mockBusinessNetworkConnection.connectWithDetails, argv.connectionProfileName, argv.businessNetworkName, argv.enrollId, argv.enrollSecret);
                 sinon.assert.calledOnce(mockBusinessNetworkConnection.getBusinessNetwork);
                 sinon.assert.calledOnce(mockBusinessNetwork.getSerializer);
                 sinon.assert.calledOnce(mockSerializer.fromJSON);
@@ -117,7 +93,7 @@ describe('composer transaction submit CLI unit tests', () => {
             sandbox.stub(CmdUtil, 'prompt').resolves(ENROLL_SECRET);
 
             let argv = {
-                connectionProfileName: DEFAULT_PROFILE_NAME,
+                connectionProfileName: 'someOtherProfile',
                 businessNetworkName: BUSINESS_NETWORK_NAME,
                 enrollId: ENROLL_ID,
                 data: '{"$class": "'+NAMESPACE+'", "success": true}'
@@ -130,9 +106,37 @@ describe('composer transaction submit CLI unit tests', () => {
             });
         });
 
+
+
+        it('should not error when all requred params (card based) are specified', () => {
+            sandbox.stub(CmdUtil, 'prompt').resolves(ENROLL_SECRET);
+
+            let argv = {
+                card: 'cardname',
+                data: '{"$class": "'+NAMESPACE+'", "success": true}'
+            };
+
+            return Submit.handler(argv)
+            .then((res) => {
+                sinon.assert.calledWith(mockBusinessNetworkConnection.connect,'cardname');
+
+            });
+        });
+
+        it('should  error when can not parse the json (card based)', () => {
+            sandbox.stub(JSON, 'parse').throws(new Error('failure'));
+
+            let argv = {
+                card: 'cardname',
+                data: '{"$class": "'+NAMESPACE+'", "success": true}'
+            };
+
+            return Submit.handler(argv).should.be.rejectedWith(/JSON error/);
+        });
+
         it('should error when the transaction fails to submit', () => {
             let argv = {
-                connectionProfileName: DEFAULT_PROFILE_NAME,
+                connectionProfileName: 'someOtherProfile',
                 businessNetworkName: BUSINESS_NETWORK_NAME,
                 enrollId: ENROLL_ID,
                 enrollSecret: ENROLL_SECRET,
@@ -150,7 +154,7 @@ describe('composer transaction submit CLI unit tests', () => {
 
         it('should error if data is not a string', () => {
             let argv = {
-                connectionProfileName: DEFAULT_PROFILE_NAME,
+                connectionProfileName: 'someOtherProfile',
                 businessNetworkName: BUSINESS_NETWORK_NAME,
                 enrollId: ENROLL_ID,
                 enrollSecret: ENROLL_SECRET,
@@ -166,7 +170,7 @@ describe('composer transaction submit CLI unit tests', () => {
 
         it('should error if data class is not supplied', () => {
             let argv = {
-                connectionProfileName: DEFAULT_PROFILE_NAME,
+                connectionProfileName: 'someOtherProfile',
                 businessNetworkName: BUSINESS_NETWORK_NAME,
                 enrollId: ENROLL_ID,
                 enrollSecret: ENROLL_SECRET,

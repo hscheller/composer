@@ -14,11 +14,8 @@
 
 'use strict';
 
-const cmdUtil = require('../../utils/cmdutils');
-const DEFAULT_PROFILE_NAME = 'defaultProfile';
-
-// const ora = require('ora');
 const chalk = require('chalk');
+const cmdUtil = require('../../utils/cmdutils');
 
 /**
  * <p>
@@ -36,53 +33,22 @@ class Ping {
     */
     static handler(argv) {
         let businessNetworkConnection;
-        let enrollId;
-        let enrollSecret;
-        let connectionProfileName = Ping.getDefaultProfileName(argv);
-        let businessNetworkName;
+        let businessNetworkDefinition;
+        let cardName = argv.card;
 
-        return (() => {
-            if (!argv.enrollSecret) {
-                return cmdUtil.prompt({
-                    name: 'enrollmentSecret',
-                    description: 'What is the enrollment secret of the user?',
-                    required: true,
-                    hidden: true,
-                    replace: '*'
-                })
-                .then((result) => {
-                    argv.enrollSecret = result;
-                });
-            } else {
-                return Promise.resolve();
-            }
-        })()
-        .then(() => {
-            enrollId = argv.enrollId;
-            enrollSecret = argv.enrollSecret;
-            businessNetworkName = argv.businessNetworkName;
-            businessNetworkConnection = cmdUtil.createBusinessNetworkConnection();
-            return businessNetworkConnection.connect(connectionProfileName, businessNetworkName, enrollId, enrollSecret);
-        })
-        .then(() => {
+        businessNetworkConnection = cmdUtil.createBusinessNetworkConnection();
+        return businessNetworkConnection.connect(cardName)
+        .then((result) => {
+            businessNetworkDefinition = result;
             return businessNetworkConnection.ping();
         })
         .then((result) => {
-            console.log(chalk.blue.bold('The connection to the network was successfully tested: ')+businessNetworkName);
+            console.log(chalk.blue.bold('The connection to the network was successfully tested: ')+businessNetworkDefinition.getName());
             console.log(chalk.blue('\tversion: ') + result.version);
             console.log(chalk.blue('\tparticipant: ') + (result.participant ? result.participant : '<no participant found>'));
         }).catch((error) => {
             throw error;
         });
-    }
-
-    /**
-      * Get default profile name
-      * @param {argv} argv program arguments
-      * @return {String} defaultConnection profile name
-      */
-    static getDefaultProfileName(argv) {
-        return argv.connectionProfileName || DEFAULT_PROFILE_NAME;
     }
 
 }

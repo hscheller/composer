@@ -15,6 +15,7 @@
 'use strict';
 
 const api = require('fabric-client/lib/api');
+const idModule = require('fabric-client/lib/msp/identity');
 const Channel = require('fabric-client/lib/Channel');
 const Client = require('fabric-client');
 const ConnectionProfileManager = require('composer-common').ConnectionProfileManager;
@@ -25,7 +26,9 @@ const HLFWalletProxy = require('../lib/hlfwalletproxy');
 const KeyValueStore = api.KeyValueStore;
 const CryptoSuite = api.CryptoSuite;
 const Orderer = require('fabric-client/lib/Orderer');
+const path = require('path');
 const Peer = require('fabric-client/lib/Peer');
+const User = require('fabric-client/lib/User');
 const Wallet = require('composer-common').Wallet;
 
 const chai = require('chai');
@@ -78,27 +81,35 @@ describe('HLFConnectionManager', () => {
     describe('global.hfc.logger', () => {
 
         it('should insert a debug logger', () => {
-            sandbox.stub(LOG, 'debug');
+            let logger = sandbox.stub(LOG, 'debug');
+            global.hfc.logger.debug('%s %s', 'hello', 'world');
             global.hfc.logger.debug('hello %s', 'world');
-            sinon.assert.calledOnce(LOG.debug);
+            global.hfc.logger.debug('hello world');
+            sinon.assert.alwaysCalledWith(logger, 'fabric-client', 'hello world');
         });
 
         it('should insert a info logger', () => {
-            sandbox.stub(LOG, 'debug');
+            let logger = sandbox.stub(LOG, 'info');
+            global.hfc.logger.info('%s %s', 'hello', 'world');
             global.hfc.logger.info('hello %s', 'world');
-            sinon.assert.calledOnce(LOG.debug);
+            global.hfc.logger.info('hello world');
+            sinon.assert.alwaysCalledWith(logger, 'fabric-client', 'hello world');
         });
 
         it('should insert a warn logger', () => {
-            sandbox.stub(LOG, 'debug');
+            let logger = sandbox.stub(LOG, 'warn');
+            global.hfc.logger.warn('%s %s', 'hello', 'world');
             global.hfc.logger.warn('hello %s', 'world');
-            sinon.assert.calledOnce(LOG.debug);
+            global.hfc.logger.warn('hello world');
+            sinon.assert.alwaysCalledWith(logger, 'fabric-client', 'hello world');
         });
 
         it('should insert a error logger', () => {
-            sandbox.stub(LOG, 'debug');
+            let logger = sandbox.stub(LOG, 'error');
+            global.hfc.logger.error('%s %s', 'hello', 'world');
             global.hfc.logger.error('hello %s', 'world');
-            sinon.assert.calledOnce(LOG.debug);
+            global.hfc.logger.error('hello world');
+            sinon.assert.alwaysCalledWith(logger, 'fabric-client', 'hello world');
         });
 
     });
@@ -535,7 +546,7 @@ describe('HLFConnectionManager', () => {
             mockCAClient = sinon.createStubInstance(FabricCAClientImpl);
             sandbox.stub(HLFConnectionManager, 'createCAClient').withArgs(sinon.match.string).returns(mockCAClient);
             mockKeyValueStore = sinon.createStubInstance(KeyValueStore);
-            sandbox.stub(Client, 'newDefaultKeyValueStore').resolves(mockKeyValueStore);
+            sandbox.stub(Client, 'newDefaultKeyValueStore').withArgs(sinon.match.has('path', sinon.match.string)).resolves(mockKeyValueStore);
             configSettingStub = sandbox.stub(Client, 'setConfigSetting');
             mockWallet = sinon.createStubInstance(Wallet);
         });
@@ -635,11 +646,52 @@ describe('HLFConnectionManager', () => {
             }).should.throw(/The certificate authority URL has not been specified/);
         });
 
-        it('should throw if keyValStore and wallet are not specified', () => {
+        it('should throw if none of keyValStore, wallet and cardName are specified', () => {
             delete connectOptions.keyValStore;
+            delete connectOptions.wallet;
+            delete connectOptions.cardName;
             (() => {
                 connectionManager.connect('hlfabric1', 'org-acme-biznet', connectOptions);
-            }).should.throw(/No key value store directory or wallet has been specified/);
+            }).should.throw(/No key value store directory, wallet or card name has been specified/);
+        });
+
+        it('should not throw if keyValStore specified but wallet and cardName are not', () => {
+            delete connectOptions.wallet;
+            delete connectOptions.cardName;
+            (() => {
+                connectionManager.connect('hlfabric1', 'org-acme-biznet', connectOptions);
+            }).should.not.throw();
+        });
+
+        it('should not throw if wallet specified but keyValStore and cardName are not', () => {
+            connectOptions.wallet = mockWallet;
+            delete connectOptions.keyValStore;
+            delete connectOptions.cardName;
+            (() => {
+                connectionManager.connect('hlfabric1', 'org-acme-biznet', connectOptions);
+            }).should.not.throw();
+        });
+
+        it('should not throw if cardName specified but keyValStore and wallet are not', () => {
+            delete connectOptions.wallet;
+            delete connectOptions.keyValStore;
+            connectOptions.cardName = 'CONGA_CARD';
+            (() => {
+                connectionManager.connect('hlfabric1', 'org-acme-biznet', connectOptions);
+            }).should.not.throw();
+        });
+
+        it('should use cardName to build keyValStore path if cardName and keyValStore specified but wallet is not', () => {
+            delete connectOptions.wallet;
+            const cardName = 'CONGA_CARD';
+            connectOptions.cardName = cardName;
+            connectOptions.keyValStore = 'KEY_VAL_STORE';
+            return connectionManager.connect('hlfabric1', 'org-acme-biznet', connectOptions).then(connection => {
+                sinon.assert.calledWith(Client.newDefaultKeyValueStore,
+                    sinon.match.has('path',
+                        sinon.match(value => path.isAbsolute(value) && value.includes(connectOptions.cardName)
+                    )));
+            });
         });
 
         //TODO: should throw if wallet not of the right type.
@@ -865,7 +917,9 @@ describe('HLFConnectionManager', () => {
         });
 
         it('should handle an error creating a store using keyValStore', () => {
+            Client.newDefaultKeyValueStore.reset();
             Client.newDefaultKeyValueStore.rejects('wow such fail');
+            // sandbox.stub(Client, 'newDefaultKeyValueStore').rejects('wow such fail');
             return connectionManager.connect('hlfabric1', 'org-acme-biznet', connectOptions)
                 .should.be.rejectedWith(/wow such fail/);
         });
@@ -887,8 +941,28 @@ describe('HLFConnectionManager', () => {
                 });
         });
 
+        it('should use specified wallet in preference to cardName and keyValStore', () => {
+            connectOptions.cardName = 'CONGA_CARD';
+            connectOptions.keyValStore = 'KEY_VAL_STORE';
+            connectOptions.wallet = mockWallet;
+            return connectionManager.connect('hlfabric1', 'org-acme-biznet', connectOptions)
+                .then((connection) => {
+                    sinon.assert.calledWith(mockClient.setStateStore, sinon.match.instanceOf(HLFWalletProxy));
+                });
+        });
+
         it('should configure a wallet proxy if a singleton wallet is provided', () => {
             Wallet.setWallet(mockWallet);
+            return connectionManager.connect('hlfabric1', 'org-acme-biznet', connectOptions)
+                .then((connection) => {
+                    sinon.assert.calledWith(mockClient.setStateStore, sinon.match.instanceOf(HLFWalletProxy));
+                });
+        });
+
+        it('should use singleton wallet in preference to cardName and keyValStore', () => {
+            Wallet.setWallet(mockWallet);
+            connectOptions.cardName = 'CONGA_CARD';
+            connectOptions.keyValStore = 'KEY_VAL_STORE';
             return connectionManager.connect('hlfabric1', 'org-acme-biznet', connectOptions)
                 .then((connection) => {
                     sinon.assert.calledWith(mockClient.setStateStore, sinon.match.instanceOf(HLFWalletProxy));
@@ -1029,11 +1103,13 @@ describe('HLFConnectionManager', () => {
             }).should.throw(/No msp id defined/);
         });
 
-        it('should throw if no keyValStore or wallet is not specified', () => {
+        it('should throw if none of keyValStore, wallet and cardName are specified', () => {
             delete profile.keyValStore;
+            delete profile.wallet;
+            delete profile.cardName;
             (() => {
                 connectionManager.importIdentity('connprof1', profile, 'anid', 'acert', 'akey');
-            }).should.throw(/No key value store directory or wallet has been specified/);
+            }).should.throw(/No key value store directory, wallet or card name has been specified/);
         });
 
         it('should handle an error creating a default key value store', () => {
@@ -1156,6 +1232,70 @@ describe('HLFConnectionManager', () => {
             mockCAClient.enroll.rejects('Error','wow such fail');
             return connectionManager.requestIdentity('connprof1', profile, 'id', 'secret')
                 .should.be.rejectedWith(/wow such fail/);
+        });
+    });
+
+    describe('#exportIdentity', function() {
+        const userId = 'Eric';
+        const certificate = 'CERTIFICATE';
+        const signerKey = 'SIGNER_KEY';
+        let profile;
+        let mockClient;
+        let mockUser;
+
+        beforeEach(() => {
+            mockClient = sinon.createStubInstance(Client);
+            sandbox.stub(HLFConnectionManager, 'createClient').returns(mockClient);
+
+            mockUser = sinon.createStubInstance(User);
+            const mockIdentity = {
+                _certificate: certificate
+            };
+            const mockSigningIdentity = sinon.createStubInstance(idModule.SigningIdentity);
+            const mockSigner = sinon.createStubInstance(idModule.Signer);
+            const mockSignerKey = sinon.createStubInstance(api.Key);
+
+            mockUser.getIdentity.returns(mockIdentity);
+            mockUser.getSigningIdentity.returns(mockSigningIdentity);
+            mockSigningIdentity._signer = mockSigner;
+            mockSigner._key = mockSignerKey;
+            mockSignerKey.toBytes.returns(signerKey);
+
+            profile = {
+                orderers: [
+                    'grpc://localhost:7050'
+                ],
+                peers: [
+                    {
+                        requestURL: 'grpc://localhost:7051',
+                        eventURL: 'grpc://localhost:7053'
+                    }
+                ],
+                ca: 'http://localhost:7054',
+                keyValStore: '/tmp/hlfabric1',
+                channel: 'testchainid',
+                timeout: 123,
+                mspID: 'MSP1Org'
+            };
+        });
+
+        afterEach(() => {
+            sandbox.reset();
+        });
+
+        it('should return credentials from Fabric Client for valid user', function() {
+            mockClient.getUserContext.withArgs(userId, true).resolves(mockUser);
+            return connectionManager.exportIdentity('connprof1', profile, userId)
+                .should.eventually.deep.equal({
+                    certificate: certificate,
+                    privateKey: signerKey
+                });
+        });
+
+        it('should return null for invalid user', function() {
+            mockClient.getUserContext.withArgs(userId, true).resolves(null);
+            return connectionManager.exportIdentity('connprof1', profile, userId)
+                .should.eventually.be.null;
         });
     });
 

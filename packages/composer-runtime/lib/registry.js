@@ -67,19 +67,22 @@ class Registry extends EventEmitter {
     getAll() {
         return this.dataCollection.getAll()
             .then((objects) => {
-                return objects.map((object) => {
-                    object = Registry.removeInternalProperties(object);
-                    return this.serializer.fromJSON(object);
-                }).reduce((promise, resource) => {
-                    return promise.then((resources) => {
-                        return this.accessController.check(resource, 'READ')
+                return objects.reduce((promiseChain, resource) => {
+                    return promiseChain.then((newResources) => {
+                        let object = Registry.removeInternalProperties(resource);
+                        try {
+                            let resourceToCheckAccess = this.serializer.fromJSON(object);
+                            return this.accessController.check(resourceToCheckAccess, 'READ')
                             .then(() => {
-                                resources.push(resource);
-                                return resources;
-                            })
-                            .catch((error) => {
-                                return resources;
+                                newResources.push(resourceToCheckAccess);
+                                return newResources;
+                            }).catch((e) => {
+                                return newResources;
                             });
+                        } catch (err) {
+                            return newResources;
+                        }
+
                     });
                 }, Promise.resolve([]));
             });
@@ -148,11 +151,12 @@ class Registry extends EventEmitter {
      * @param {Object} [options] Options for processing the resources.
      * @param {boolean} [options.convertResourcesToRelationships] Permit resources
      * in the place of relationships, defaults to false.
+     *  @param {boolean} [options.forceAdd] Forces adding the object even if it present (default to false)
      * @return {Promise} A promise that will be resolved when complete, or rejected
      * with an error.
      */
     addAll(resources, options) {
-        options = options || {};
+        options = options || { forceAdd: false };
         return resources.reduce((result, resource) => {
             return result.then(() => {
                 return this.add(resource, options);
@@ -166,19 +170,30 @@ class Registry extends EventEmitter {
      * @param {Object} [options] Options for processing the resources.
      * @param {boolean} [options.convertResourcesToRelationships] Permit resources
      * in the place of relationships, defaults to false.
+     * @param {boolean} [options.forceAdd] Forces adding the object even if it present (default to false)
      * @return {Promise} A promise that will be resolved when complete, or rejected
      * with an error.
      */
     add(resource, options) {
-        return this.accessController.check(resource, 'CREATE')
+
+        return Promise.resolve().then(() => {
+            if (!(resource instanceof Resource)) {
+                throw new Error('Expected a Resource or Concept.');                }
+            else if (this.type !== resource.getClassDeclaration().getSystemType()){
+                throw new Error('Cannot add type: ' + resource.getClassDeclaration().getSystemType() + ' to ' + this.type);
+            }
+        })
             .then(() => {
-                options = options || {};
+                return this.accessController.check(resource, 'CREATE');
+            })
+            .then(() => {
+                options = options || { forceAdd: false };
                 let id = resource.getIdentifier();
                 let object = this.serializer.toJSON(resource, {
                     convertResourcesToRelationships: options.convertResourcesToRelationships
                 });
                 object = this.addInternalProperties(object);
-                return this.dataCollection.add(id, object);
+                return this.dataCollection.add(id, object, options.forceAdd);
             })
             .then(() => {
                 this.emit('resourceadded', {
@@ -226,13 +241,22 @@ class Registry extends EventEmitter {
      * with an error.
      */
     update(resource, options) {
-        options = options || {};
-        let id = resource.getIdentifier();
-        let object = this.serializer.toJSON(resource, {
-            convertResourcesToRelationships: options.convertResourcesToRelationships
-        });
-        object = this.addInternalProperties(object);
-        return this.dataCollection.get(id)
+        let id;
+        let object;
+
+        return Promise.resolve().then(() => {
+            if (!(resource instanceof Resource)) {
+                throw new Error('Expected a Resource or Concept.');                }
+            else if (this.type !== resource.getClassDeclaration().getSystemType()){
+                throw new Error('Cannot update type: ' + resource.getClassDeclaration().getSystemType() + ' to ' + this.type);
+            }
+            options = options || {};
+            id = resource.getIdentifier();
+            object = this.serializer.toJSON(resource, {
+                convertResourcesToRelationships: options.convertResourcesToRelationships                });                object = this.addInternalProperties(object);
+
+            return this.dataCollection.get(id);
+        })
             .then((oldResource) => {
                 return this.serializer.fromJSON(oldResource);
             })

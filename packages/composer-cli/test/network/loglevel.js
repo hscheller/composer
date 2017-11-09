@@ -14,7 +14,7 @@
 
 'use strict';
 
-const Client = require('composer-admin');
+const AdminConnection = require('composer-admin').AdminConnection;
 
 const LogLevel = require('../../lib/cmds/network/loglevelCommand.js');
 const CmdUtil = require('../../lib/cmds/utils/cmdutils.js');
@@ -24,11 +24,6 @@ const chai = require('chai');
 chai.should();
 chai.use(require('chai-as-promised'));
 
-const BUSINESS_NETWORK_NAME = 'net.biz.TestNetwork-0.0.1';
-const PROFILE_NAME = 'defaultProfile';
-const ENROLL_ID = 'SuccessKid';
-const ENROLL_SECRET = 'SuccessKidWin';
-
 describe('composer network logLevel CLI unit tests', () => {
 
     let sandbox;
@@ -36,7 +31,8 @@ describe('composer network logLevel CLI unit tests', () => {
 
     beforeEach(() => {
         sandbox = sinon.sandbox.create();
-        mockAdminConnection = sinon.createStubInstance(Client.AdminConnection);
+        mockAdminConnection = sinon.createStubInstance(AdminConnection);
+        mockAdminConnection.connect.resolves();
         sandbox.stub(CmdUtil, 'createAdminConnection').returns(mockAdminConnection);
         mockAdminConnection.getLogLevel.resolves('INFO');
         sandbox.stub(process, 'exit');
@@ -46,35 +42,31 @@ describe('composer network logLevel CLI unit tests', () => {
         sandbox.restore();
     });
 
-    it('should query the current loglevel', () => {
+    it('should query the current logLevel', () => {
         let argv = {
-            businessNetworkName: BUSINESS_NETWORK_NAME,
-            enrollId: ENROLL_ID,
-            enrollSecret: ENROLL_SECRET,
-            connectionProfileName: PROFILE_NAME
+            card:'cardname'
         };
 
         return LogLevel.handler(argv)
             .then((res) => {
+                argv.thePromise.should.be.a('promise');
                 sinon.assert.calledOnce(mockAdminConnection.connect);
-                sinon.assert.calledWith(mockAdminConnection.connect, PROFILE_NAME, argv.enrollId, argv.enrollSecret);
+                sinon.assert.calledWith(mockAdminConnection.connect, 'cardname');
                 sinon.assert.calledOnce(mockAdminConnection.getLogLevel);
             });
     });
 
-    it('should set the loglevel', () => {
+    it('should set the logLevel', () => {
         let argv = {
-            businessNetworkName: BUSINESS_NETWORK_NAME,
-            enrollId: ENROLL_ID,
-            enrollSecret: ENROLL_SECRET,
-            connectionProfileName: PROFILE_NAME,
+            card:'cardname' ,
             newlevel: 'DEBUG'
         };
 
         return LogLevel.handler(argv)
             .then((res) => {
+                argv.thePromise.should.be.a('promise');
                 sinon.assert.calledOnce(mockAdminConnection.connect);
-                sinon.assert.calledWith(mockAdminConnection.connect, PROFILE_NAME, argv.enrollId, argv.enrollSecret);
+                sinon.assert.calledWith(mockAdminConnection.connect, 'cardname');
                 sinon.assert.calledOnce(mockAdminConnection.setLogLevel);
                 sinon.assert.calledWith(mockAdminConnection.setLogLevel, 'DEBUG');
             });

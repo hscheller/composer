@@ -14,6 +14,8 @@
 
 'use strict';
 
+const crypto = require('crypto');
+const formidable = require('formidable');
 const inquirer = require('inquirer');
 const path = require('path');
 
@@ -34,51 +36,14 @@ class Util {
     static getConnectionSettings() {
         let questions = [
             {
-                name: 'profilename',
+                name: 'card',
                 type: 'input',
-                message: 'Enter your Fabric Connection Profile Name:',
+                message: 'Enter the name of the business network card to use:',
                 validate: function (value) {
                     if (value.length) {
                         return true;
                     } else {
-                        return 'Please enter the name of the Fabric Connection Profile you wish to use \n \
-                                (hint: this is usually the name of the directory in $HOME containing the connection.json file)';
-                    }
-                }
-            },
-            {
-                name: 'businessNetworkId',
-                type: 'input',
-                message: 'Enter your Business Network Identifier :',
-                validate: function (value) {
-                    if (value.length) {
-                        return true;
-                    } else {
-                        return 'Please enter your Business Network Identifier';
-                    }
-                }
-            },
-            {
-                name: 'userid',
-                type: 'input',
-                message: 'Enter your Fabric username :',
-                validate: function (value) {
-                    if (value.length) {
-                        return true;
-                    } else {
-                        return 'Please enter your Fabric username';
-                    }
-                }
-            },
-            {
-                name: 'secret',
-                type: 'secret',
-                message: 'Enter your secret:',
-                validate: function (value) {
-                    if (value.length) {
-                        return true;
-                    } else {
-                        return 'Please enter your secret';
+                        return 'Please enter the name of the business network card to use';
                     }
                 }
             },
@@ -94,10 +59,19 @@ class Util {
                 default: 'always'
             },
             {
-                name: 'security',
+                name: 'authentication',
                 type: 'confirm',
-                message: 'Specify if you want the generated REST API to be secured:',
+                message: 'Specify if you want to enable authentication for the REST API using Passport:',
                 default: false
+            },
+            {
+                name: 'multiuser',
+                type: 'confirm',
+                message: 'Specify if you want to enable multiple user and identity management using wallets:',
+                default: false,
+                when: (answers) => {
+                    return answers.authentication;
+                }
             },
             {
                 name: 'websockets',
@@ -132,6 +106,69 @@ class Util {
         ];
 
         return inquirer.prompt(questions);
+    }
+
+    /**
+     * Create a formidable IncomingForm object.
+     * @return {IncomingForm} The new formidable IncomingForm object.
+     */
+    static createIncomingForm() {
+        return new formidable.IncomingForm();
+    }
+
+    /**
+     * Generate a key
+     * @param {String} hmacKey The hmac key, default to 'loopback'
+     * @param {String} algorithm The algorithm, default to 'sha1'
+     * @param {String} encoding The string encoding, default to 'hex'
+     * @returns {String} The generated key
+     */
+    static generateKey(hmacKey, algorithm, encoding) {
+        algorithm = algorithm || 'sha1';
+        encoding = encoding || 'hex';
+        let hmac = crypto.createHmac(algorithm, hmacKey);
+        let buf = crypto.randomBytes(32);
+        hmac.update(buf);
+        let key = hmac.digest(encoding);
+        return key;
+    }
+
+    /**
+     * Convert a user profile into a user object. This is an adapted copy of the code
+     * in loopback-component-passport that is not so brain-dead that it ignores the
+     * fact that a user profile ID might already be an email address.
+     * @param {String} provider The provider.
+     * @param {Object} profile The user profile.
+     * @param {Object} options The options.
+     * @return {Object} The user.
+     */
+    static profileToUser(provider, profile, options) {
+        // Let's create a user for that
+        let usernameOrId = profile.username || profile.id;
+        let actualProvider = profile.provider || provider;
+        let profileEmail = profile.emails && profile.emails[0] && profile.emails[0].value;
+        // Check and encode the username/ID (the email local part) if required.
+        if (usernameOrId.match(/[^A-Za-z0-9\.\-_]/)) {
+            usernameOrId = new Buffer(usernameOrId).toString('hex');
+        }
+        // Check and encode the provider (the email hostname) if required.
+        // Note that unlike the email local part, the email hostname cannot
+        // contain underscore characters.
+        if (actualProvider.match(/[^A-Za-z0-9\.\-]/)) {
+            actualProvider = new Buffer(actualProvider).toString('hex');
+        }
+        let generatedEmail = usernameOrId + '@loopback.' + actualProvider + '.com';
+        let email = provider === 'ldap' ? profileEmail : generatedEmail;
+        let username = actualProvider + '.' + usernameOrId;
+        let password = Util.generateKey('password');
+        let userObj = {
+            username: username,
+            password: password,
+        };
+        if (email) {
+            userObj.email = email;
+        }
+        return userObj;
     }
 
 }

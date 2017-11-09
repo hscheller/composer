@@ -38,6 +38,15 @@ class MockCheckOverFlowDirective {
     @Input() public expanded: boolean;
 }
 
+@Directive({
+    selector: '[ngbTooltip]'
+})
+class MockToolTipDirective {
+    @Input() public ngbTooltip: string;
+    @Input() public placement: string;
+    @Input() public container: string;
+}
+
 describe(`RegistryComponent`, () => {
     let component: RegistryComponent;
     let fixture: ComponentFixture<RegistryComponent>;
@@ -80,6 +89,7 @@ describe(`RegistryComponent`, () => {
             ],
             declarations: [
                 MockCheckOverFlowDirective,
+                MockToolTipDirective,
                 RegistryComponent,
             ],
             providers: [
@@ -97,7 +107,8 @@ describe(`RegistryComponent`, () => {
         mockAssetRegistry.registryType = 'Asset';
 
         mockHistorian = sinon.createStubInstance(Historian);
-        mockHistorian.registryType = 'Historian';
+        mockHistorian.registryType = 'Asset';
+        mockHistorian.id = 'org.hyperledger.composer.system.HistorianRecord';
     });
 
     afterEach(() => {
@@ -131,11 +142,11 @@ describe(`RegistryComponent`, () => {
 
         it('should call loadResources when registry is set', () => {
             sandbox.stub(component, 'loadResources');
-            mockAssetRegistry.registryType = 'Historian';
+            mockAssetRegistry.id = 'org.hyperledger.composer.system.HistorianRecord';
             component.registry = mockAssetRegistry;
             component.loadResources.should.be.called;
             component['_registry'].should.equal(mockAssetRegistry);
-            component['registryType'].should.equal('Historian');
+            component['registryId'].should.equal('org.hyperledger.composer.system.HistorianRecord');
         });
 
         it('should not call loadResources if null registry is given', () => {
@@ -162,7 +173,7 @@ describe(`RegistryComponent`, () => {
         it('should sort a list of assets by identifier', fakeAsync(() => {
             mockAssetRegistry.getAll.returns(Promise.resolve(assetRegistryContents));
             component['_registry'] = mockAssetRegistry;
-            component['registryType'] = mockAssetRegistry.registryType;
+            component['registryId'] = mockAssetRegistry.id;
             component.loadResources();
             tick();
             component['resources'][0].getIdentifier().should.equal('1');
@@ -173,7 +184,7 @@ describe(`RegistryComponent`, () => {
         it('should sort a list of historian resources by timestamp', fakeAsync(() => {
             mockHistorian.getAll.returns(Promise.resolve(historianContents));
             component['_registry'] = mockHistorian;
-            component['registryType'] = mockHistorian.registryType;
+            component['registryId'] = mockHistorian.id;
             component.loadResources();
             tick();
             component['resources'][0].transactionTimestamp.should.equal('3');
@@ -315,7 +326,7 @@ describe(`RegistryComponent`, () => {
             tick();
             tick();
             component.loadResources.should.be.called;
-            mockNgbModalRef.componentInstance.confirmMessage.should.equal('Please confirm that you want to delete Asset: ' + mockResource.getIdentifier());
+            mockNgbModalRef.componentInstance.deleteMessage.should.equal('This action will be recorded in the Historian, and cannot be reversed. Are you sure you want to delete?');
         }));
 
         it('should create a new error with the alert service', fakeAsync(() => {
@@ -324,7 +335,6 @@ describe(`RegistryComponent`, () => {
             component.openDeleteResourceModal(mockResource);
             tick();
             tick();
-            mockNgbModalRef.componentInstance.confirmMessage.should.equal('Please confirm that you want to delete Asset: ' + mockResource.getIdentifier());
             mockAlertService.errorStatus$.next.should.be.called;
             mockAlertService.errorStatus$.next.should.be
                 .calledWith('Removing the selected item from the registry failed:error message');
@@ -342,12 +352,16 @@ describe(`RegistryComponent`, () => {
 
     describe('viewTransactionData', () => {
         it('should open the modal', fakeAsync(() => {
+            mockClientService.resolveTransactionRelationship.returns(Promise.resolve({$class: 'myTransaction'}));
+
+            let componentInstance = {
+                transaction: {},
+                events: []
+            };
+
             mockNgbModal.open = sinon.stub().returns({
-                componentInstance: {
-                    transaction: {},
-                    events: []
-                },
-                result: Promise.resolve('some error')
+                componentInstance: componentInstance,
+                result: Promise.resolve()
             });
 
             let mockTransaction = {mock: 'transaction', eventsEmitted: ['event 1']};
@@ -356,8 +370,60 @@ describe(`RegistryComponent`, () => {
             tick();
 
             mockNgbModal.open.should.have.been.called;
+            componentInstance.transaction.should.deep.equal({$class: 'myTransaction'});
+            componentInstance.events.should.deep.equal(['event 1']);
         }));
-        });
+
+        it('should handle error', fakeAsync(() => {
+            mockClientService.resolveTransactionRelationship.returns(Promise.resolve({$class: 'myTransaction'}));
+
+            let componentInstance = {
+                transaction: {},
+                events: []
+            };
+
+            mockNgbModal.open = sinon.stub().returns({
+                componentInstance: componentInstance,
+                result: Promise.reject('some error')
+            });
+
+            let mockTransaction = {mock: 'transaction', eventsEmitted: ['event 1']};
+            component.viewTransactionData(mockTransaction);
+
+            tick();
+
+            mockNgbModal.open.should.have.been.called;
+            componentInstance.transaction.should.deep.equal({$class: 'myTransaction'});
+            componentInstance.events.should.deep.equal(['event 1']);
+
+            mockAlertService.errorStatus$.next.should.have.been.calledWith('some error');
+        }));
+
+        it('should handle escape', fakeAsync(() => {
+            mockClientService.resolveTransactionRelationship.returns(Promise.resolve({$class: 'myTransaction'}));
+
+            let componentInstance = {
+                transaction: {},
+                events: []
+            };
+
+            mockNgbModal.open = sinon.stub().returns({
+                componentInstance: componentInstance,
+                result: Promise.reject(1)
+            });
+
+            let mockTransaction = {mock: 'transaction', eventsEmitted: ['event 1']};
+            component.viewTransactionData(mockTransaction);
+
+            tick();
+
+            mockNgbModal.open.should.have.been.called;
+            componentInstance.transaction.should.deep.equal({$class: 'myTransaction'});
+            componentInstance.events.should.deep.equal(['event 1']);
+
+            mockAlertService.errorStatus$.next.should.not.have.been.called;
+        }));
+    });
 
     describe('updateTableScroll', () => {
         it('should assign a value to the tableScrolled variable', () => {
@@ -371,13 +437,13 @@ describe(`RegistryComponent`, () => {
 
     describe('#isHistorian', () => {
         it('should return true if registry type is historian', () => {
-            component['registryType'] = 'Historian';
+            component['registryId'] = 'org.hyperledger.composer.system.HistorianRecord';
 
             component['isHistorian']().should.be.true;
         });
 
         it('should return false if registry type is not historian', () => {
-            component['registryType'] = 'NotHistorian';
+            component['registryId'] = 'org.hyperledger.composer.system.Identity';
 
             component['isHistorian']().should.be.false;
         });

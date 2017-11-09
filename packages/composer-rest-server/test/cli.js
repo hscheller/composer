@@ -31,12 +31,9 @@ describe('composer-rest-server CLI unit tests', () => {
     beforeEach(() => {
         sandbox = sinon.sandbox.create();
         sandbox.stub(Util, 'getConnectionSettings').resolves({
-            profilename: 'defaultProfile',
-            businessNetworkId: 'org-acme-biznet',
-            userid: 'admin',
-            secret: 'adminpw',
+            card: 'admin@org-acme-biznet',
             namespaces: 'always',
-            security: false,
+            authentication: false,
             websockets: true,
             tls: false
         });
@@ -88,12 +85,10 @@ describe('composer-rest-server CLI unit tests', () => {
         }).then(() => {
             sinon.assert.calledOnce(Util.getConnectionSettings);
             const settings = {
-                businessNetworkIdentifier: 'org-acme-biznet',
-                connectionProfileName: 'defaultProfile',
+                card: 'admin@org-acme-biznet',
                 namespaces: 'always',
-                participantId: 'admin',
-                participantPwd: 'adminpw',
-                security: false,
+                authentication: false,
+                multiuser: undefined,
                 websockets: true,
                 tls: false,
                 tlscert: undefined,
@@ -108,7 +103,7 @@ describe('composer-rest-server CLI unit tests', () => {
 
     it('should throw an error if command line arguments specified but some are missing', () => {
         let listen = sinon.stub();
-        process.argv = [ process.argv0, 'cli.js', '-n', 'org-acme-biznet' ];
+        process.argv = [ process.argv0, 'cli.js', '-a' ];
         delete require.cache[require.resolve('yargs')];
         const server = sinon.stub().resolves({
             app: {
@@ -132,16 +127,13 @@ describe('composer-rest-server CLI unit tests', () => {
         });
     });
 
-    it('should use the argumemts from yargs and start the server', () => {
+    it('should use the arguments from yargs and start the server', () => {
         let listen = sinon.stub();
         let get = sinon.stub();
         get.withArgs('port').returns(3000);
         process.argv = [
             process.argv0, 'cli.js',
-            '-p', 'defaultProfile',
-            '-n', 'org-acme-biznet',
-            '-i', 'admin',
-            '-s', 'adminpw'
+            '-c', 'admin@org-acme-biznet'
         ];
         delete require.cache[require.resolve('yargs')];
         const server = sinon.stub().resolves({
@@ -161,13 +153,99 @@ describe('composer-rest-server CLI unit tests', () => {
         }).then(() => {
             sinon.assert.notCalled(Util.getConnectionSettings);
             const settings = {
-                businessNetworkIdentifier: 'org-acme-biznet',
-                connectionProfileName: 'defaultProfile',
+                card: 'admin@org-acme-biznet',
                 namespaces: 'always',
-                participantId: 'admin',
-                participantPwd: 'adminpw',
                 port: undefined,
-                security: false,
+                authentication: false,
+                multiuser: false,
+                websockets: true,
+                tls: false,
+                tlscert: defaultTlsCertificate,
+                tlskey: defaultTlsKey
+            };
+            sinon.assert.calledWith(server, settings);
+            sinon.assert.calledOnce(listen);
+            listen.args[0][0].should.equal(3000);
+            listen.args[0][1].should.be.a('function');
+        });
+    });
+
+    it('should not enable multiuser if authentication specified', () => {
+        let listen = sinon.stub();
+        let get = sinon.stub();
+        get.withArgs('port').returns(3000);
+        process.argv = [
+            process.argv0, 'cli.js',
+            '-c', 'admin@org-acme-biznet',
+            '-a'
+        ];
+        delete require.cache[require.resolve('yargs')];
+        const server = sinon.stub().resolves({
+            app: {
+                get
+            },
+            server: {
+                listen
+            }
+        });
+        return proxyquire('../cli', {
+            clear: () => { },
+            chalk: {
+                yellow: () => { return ''; }
+            },
+            './server/server': server
+        }).then(() => {
+            sinon.assert.notCalled(Util.getConnectionSettings);
+            const settings = {
+                card: 'admin@org-acme-biznet',
+                namespaces: 'always',
+                port: undefined,
+                authentication: true,
+                multiuser: false,
+                websockets: true,
+                tls: false,
+                tlscert: defaultTlsCertificate,
+                tlskey: defaultTlsKey
+            };
+            sinon.assert.calledWith(server, settings);
+            sinon.assert.calledOnce(listen);
+            listen.args[0][0].should.equal(3000);
+            listen.args[0][1].should.be.a('function');
+        });
+    });
+
+    it('should automatically enable authentication if multiuser specified', () => {
+        let listen = sinon.stub();
+        let get = sinon.stub();
+        get.withArgs('port').returns(3000);
+        process.argv = [
+            process.argv0, 'cli.js',
+            '-c', 'admin@org-acme-biznet',
+            '-m'
+        ];
+        delete require.cache[require.resolve('yargs')];
+        const server = sinon.stub().resolves({
+            app: {
+                get
+            },
+            server: {
+                listen
+            }
+        });
+        return proxyquire('../cli', {
+            clear: () => { },
+            chalk: {
+                yellow: () => { return ''; }
+            },
+            './server/server': server
+        }).then(() => {
+            sinon.assert.notCalled(Util.getConnectionSettings);
+            const settings = {
+                card: 'admin@org-acme-biznet',
+                namespaces: 'always',
+                port: undefined,
+                authentication: true,
+                multiuser: true,
                 websockets: true,
                 tls: false,
                 tlscert: defaultTlsCertificate,
@@ -189,10 +267,7 @@ describe('composer-rest-server CLI unit tests', () => {
         get.withArgs('loopback-component-explorer').returns(true);
         process.argv = [
             process.argv0, 'cli.js',
-            '-p', 'defaultProfile',
-            '-n', 'org-acme-biznet',
-            '-i', 'admin',
-            '-s', 'adminpw'
+            '-c', 'admin@org-acme-biznet'
         ];
         delete require.cache[require.resolve('yargs')];
         const server = sinon.stub().resolves({
@@ -229,10 +304,7 @@ describe('composer-rest-server CLI unit tests', () => {
         get.withArgs('url').returns('http://localhost:3000');
         process.argv = [
             process.argv0, 'cli.js',
-            '-p', 'defaultProfile',
-            '-n', 'org-acme-biznet',
-            '-i', 'admin',
-            '-s', 'adminpw'
+            '-c', 'admin@org-acme-biznet'
         ];
         delete require.cache[require.resolve('yargs')];
         const server = sinon.stub().resolves({

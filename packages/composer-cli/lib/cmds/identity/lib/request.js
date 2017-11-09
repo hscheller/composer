@@ -14,12 +14,11 @@
 
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
-const mkdirp = require('mkdirp');
-
 const cmdUtil = require('../../utils/cmdutils');
+const fs = require('fs');
+const mkdirp = require('mkdirp');
+const os = require('os');
+const path = require('path');
 
 /**
  * <p>
@@ -37,19 +36,20 @@ class Request {
     static handler(argv) {
         let adminConnection = cmdUtil.createAdminConnection();
         let actualLocation = argv.path ? path.resolve(argv.path) : path.join(os.homedir(), '/.identityCredentials');
-        return adminConnection.requestIdentity(argv.connectionProfileName, argv.enrollId, argv.enrollSecret)
+        let enrollId;
+        return adminConnection.getCard(argv.card)
+            .then((card)=>{
+                let profileName = card.getConnectionProfile().name;
+                enrollId = card.getUserName();
+                let enrollSecret = card.getEnrollmentCredentials().secret;
+                return adminConnection.requestIdentity(profileName, enrollId, enrollSecret);
+            })
             .then((result) => {
-                result;
-                try {
-                    mkdirp.sync(actualLocation);
-                    fs.writeFileSync(path.join(actualLocation, argv.enrollId + '-pub.pem'), result.certificate);
-                    fs.writeFileSync(path.join(actualLocation, argv.enrollId + '-priv.pem'), result.key);
-                    fs.writeFileSync(path.join(actualLocation, result.caName + '-root.pem'), result.rootCertificate);
-                    console.log(`'${argv.enrollId}' was successfully requested and the certificates stored in '${actualLocation}'`);
-                }
-                catch(err) {
-                    throw err;
-                }
+                mkdirp.sync(actualLocation);
+                fs.writeFileSync(path.join(actualLocation, enrollId + '-pub.pem'), result.certificate);
+                fs.writeFileSync(path.join(actualLocation, enrollId + '-priv.pem'), result.key);
+                fs.writeFileSync(path.join(actualLocation, result.caName + '-root.pem'), result.rootCertificate);
+                console.log(`'${enrollId}' was successfully requested and the certificates stored in '${actualLocation}'`);
             });
     }
 }
